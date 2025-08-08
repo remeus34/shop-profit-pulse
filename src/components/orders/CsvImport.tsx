@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 
 // Minimal CSV import component with duplicate order detection (user_id, order_id)
 // Assumes authentication is enabled (RLS). Will toast and abort if user is not logged in.
@@ -13,6 +14,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
   const [fileName, setFileName] = useState("");
   const [authed, setAuthed] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
   const getVal = (row: Record<string, any>, candidates: string[]) => {
@@ -32,11 +34,14 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
 
   useEffect(() => {
     let active = true;
+    // Listener first
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      setAuthed(!!session?.user);
+    });
+    // Then get existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (active) setAuthed(!!session?.user);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthed(!!session?.user);
     });
     return () => {
       active = false;
@@ -61,6 +66,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
           variant: "destructive" as any,
         });
         setLoading(false);
+        navigate("/auth");
         return;
       }
 
@@ -214,18 +220,12 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       <Button type="button" onClick={() => fileRef.current?.click()} className="w-full sm:w-auto">
         Upload CSV
       </Button>
-      <Button
-        onClick={handleImport}
-        disabled={loading}
-        title={!authed ? "Please sign in to import orders" : undefined}
-        variant="secondary"
-        className="w-full sm:w-auto"
-      >
+      <Button onClick={handleImport} disabled={loading} variant="secondary" className="w-full sm:w-auto">
         {loading ? "Importing..." : "Import CSV"}
       </Button>
-      {fileName && <span className="text-sm text-muted-foreground truncate">{fileName}</span>}
+      {fileName && <span className="text-sm text-muted-foreground truncate" aria-live="polite">{fileName}</span>}
       {!authed && (
-        <span className="text-xs text-muted-foreground">Sign in to import orders.</span>
+        <a href="/auth" className="text-sm underline text-primary">Sign in</a>
       )}
     </div>
   );

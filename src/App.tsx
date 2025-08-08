@@ -15,6 +15,7 @@ import Cogs from "./pages/Cogs";
 import Ads from "./pages/Ads";
 import Research from "./pages/Research";
 import Connect from "./pages/Connect";
+import Auth from "./pages/Auth";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +38,7 @@ const App = () => (
             <Route path="/ads" element={<Ads />} />
             <Route path="/research" element={<Research />} />
             <Route path="/connect" element={<Connect />} />
+            <Route path="/auth" element={<Auth />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Route>
