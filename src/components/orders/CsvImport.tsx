@@ -216,7 +216,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       </Button>
       <Button
         onClick={handleImport}
-        disabled={loading || !authed}
+        disabled={loading}
         title={!authed ? "Please sign in to import orders" : undefined}
         variant="secondary"
         className="w-full sm:w-auto"
@@ -224,6 +224,9 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         {loading ? "Importing..." : "Import CSV"}
       </Button>
       {fileName && <span className="text-sm text-muted-foreground truncate">{fileName}</span>}
+      {!authed && (
+        <span className="text-xs text-muted-foreground">Sign in to import orders.</span>
+      )}
     </div>
   );
 }
