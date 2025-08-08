@@ -48,14 +48,14 @@ export default function OrdersFilters({
       <div className="space-y-1">
         <Label>Store</Label>
         <Select
-          value={filters.store || ""}
-          onValueChange={(v) => setFilters((f) => ({ ...f, store: v || undefined }))}
+          value={filters.store ?? "__ALL__"}
+          onValueChange={(v) => setFilters((f) => ({ ...f, store: v === "__ALL__" ? undefined : v }))}
         >
           <SelectTrigger>
             <SelectValue placeholder="All stores" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">All stores</SelectItem>
+          <SelectContent className="z-50 bg-background">
+            <SelectItem value="__ALL__">All stores</SelectItem>
             {storeOptions.filter(Boolean).map((s) => (
               <SelectItem key={s} value={s}>
                 {s}
