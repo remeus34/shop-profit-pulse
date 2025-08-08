@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 export default function CsvImport({ onImported }: { onImported?: () => void }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
+  const [fileName, setFileName] = useState("");
   const { toast } = useToast();
 
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -189,10 +190,21 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Input ref={fileRef} type="file" accept=".csv" />
-      <Button onClick={handleImport} disabled={loading} variant="secondary">
+      <Input
+        ref={fileRef}
+        type="file"
+        accept=".csv"
+        onChange={() => setFileName(fileRef.current?.files?.[0]?.name ?? "")}
+        aria-label="Upload orders CSV file"
+        className="hidden"
+      />
+      <Button type="button" onClick={() => fileRef.current?.click()} className="w-full sm:w-auto">
+        Upload CSV
+      </Button>
+      <Button onClick={handleImport} disabled={loading} variant="secondary" className="w-full sm:w-auto">
         {loading ? "Importing..." : "Import CSV"}
       </Button>
+      {fileName && <span className="text-sm text-muted-foreground truncate">{fileName}</span>}
     </div>
   );
 }
