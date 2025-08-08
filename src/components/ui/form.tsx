@@ -51,14 +51,15 @@ const useFormField = () => {
 
   const fieldState = getFieldState(fieldContext.name, formState)
 
-  const { id } = itemContext
+  const reactId = React.useId()
+  const baseId = itemContext?.id ?? reactId
 
   return {
-    id,
+    id: baseId,
     name: fieldContext.name,
-    formItemId: `${id}-form-item`,
-    formDescriptionId: `${id}-form-item-description`,
-    formMessageId: `${id}-form-item-message`,
+    formItemId: `${baseId}-form-item`,
+    formDescriptionId: `${baseId}-form-item-description`,
+    formMessageId: `${baseId}-form-item-message`,
     ...fieldState,
   }
 }
@@ -67,8 +68,8 @@ type FormItemContextValue = {
   id: string
 }
 
-const FormItemContext = React.createContext<FormItemContextValue>(
-  {} as FormItemContextValue
+const FormItemContext = React.createContext<FormItemContextValue | undefined>(
+  undefined
 )
 
 const FormItem = React.forwardRef<
