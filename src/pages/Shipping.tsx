@@ -1,5 +1,6 @@
 import SEO from "@/components/SEO";
 import { Card, CardContent } from "@/components/ui/card";
+import ShippingCsvImport from "@/components/shipping/ShippingCsvImport";
 
 export default function Shipping() {
   return (
@@ -9,6 +10,7 @@ export default function Shipping() {
       <Card>
         <CardContent className="pt-4">
           <p className="text-muted-foreground">Upload CSVs from services like PirateShip and monitor spend over time.</p>
+          <ShippingCsvImport />
         </CardContent>
       </Card>
     </div>
