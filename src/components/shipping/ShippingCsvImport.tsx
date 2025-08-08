@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import Papa from "papaparse";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cleanPirateShipCsvRows, type CleanedShippingLabel } from "@/lib/shipping/parsePirateShipCsv";
@@ -12,6 +12,7 @@ export default function ShippingCsvImport() {
   const [ignored, setIgnored] = useState<number>(0);
   const [fileName, setFileName] = useState<string>("");
   const [parsing, setParsing] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (file: File) => {
     setParsing(true);
@@ -52,9 +53,13 @@ export default function ShippingCsvImport() {
   return (
     <Card className="mt-4">
       <CardContent className="pt-6 space-y-4">
+        <p className="text-sm text-muted-foreground">Upload your Etsy Orders or PirateShip CSV here</p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Input type="file" accept=".csv,text/csv" onChange={onFileInput} aria-label="Upload shipping CSV" />
-          <Button type="button" disabled className="sm:w-auto">{parsing ? "Parsing…" : fileName ? "Loaded" : "Select CSV"}</Button>
+          <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={onFileInput} aria-label="Upload CSV file" className="hidden" />
+          <Button type="button" onClick={() => fileInputRef.current?.click()} className="w-full sm:w-auto">
+            {parsing ? "Parsing…" : "Upload CSV"}
+          </Button>
+          {fileName && <span className="text-sm text-muted-foreground truncate">{fileName}</span>}
         </div>
 
         {cleaned && (
