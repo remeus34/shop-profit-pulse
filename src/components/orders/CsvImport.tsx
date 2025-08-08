@@ -224,11 +224,21 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       const insertedMap = new Map<string, string>();
       (insertedOrders || []).forEach((o) => insertedMap.set(o.order_id, o.id));
 
-      // Insert items for only the newly inserted orders
+      // Replace existing items for these orders to prevent duplicates
+      const orderPks = Array.from(insertedMap.values());
+      if (orderPks.length) {
+        const { error: delErr } = await supabase
+          .from("order_items")
+          .delete()
+          .in("order_id_fk", orderPks);
+        if (delErr) throw delErr;
+      }
+
+      // Insert fresh summary items for each affected order
       const itemsToInsert: any[] = [];
       for (const [orderId, lines] of Object.entries(orderItemsByOrderId)) {
         const orderPk = insertedMap.get(orderId);
-        if (!orderPk) continue; // skip duplicates
+        if (!orderPk) continue;
         for (const li of lines) {
           itemsToInsert.push({ order_id_fk: orderPk, ...li });
         }
