@@ -329,7 +329,7 @@ export default function Expenses() {
         <div className="flex flex-wrap gap-2">
           <Dialog open={openAddCategory} onOpenChange={setOpenAddCategory}>
             <DialogTrigger asChild>
-              <Button variant="secondary" className="hover-scale"><FolderPlus className="h-4 w-4" /> Add Category</Button>
+              <Button variant="secondary" className="hover-scale" onClick={() => setOpenAddCategory(true)}><FolderPlus className="h-4 w-4" /> Add Category</Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
