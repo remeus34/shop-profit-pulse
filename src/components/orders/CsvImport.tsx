@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import Papa from "papaparse";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState("");
+  const [authed, setAuthed] = useState(false);
   const { toast } = useToast();
 
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -29,6 +30,20 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
     return isNaN(num) ? 0 : num;
   };
 
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (active) setAuthed(!!session?.user);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthed(!!session?.user);
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const handleImport = async () => {
     try {
       if (!fileRef.current?.files?.[0]) {
@@ -38,13 +53,11 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
 
       setLoading(true);
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.user) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         toast({
           title: "Sign in required",
-          description: "You need to be logged in to import orders.",
+          description: "Your session may have expired. Please log in to import orders.",
           variant: "destructive" as any,
         });
         setLoading(false);
@@ -126,7 +139,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         }
 
         ordersPayload.push({
-          user_id: session.user.id,
+          user_id: user.id,
           order_id: orderId,
           order_date: orderDate ? orderDate.toISOString() : null,
           store_name: storeName ?? null,
@@ -201,7 +214,13 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       <Button type="button" onClick={() => fileRef.current?.click()} className="w-full sm:w-auto">
         Upload CSV
       </Button>
-      <Button onClick={handleImport} disabled={loading} variant="secondary" className="w-full sm:w-auto">
+      <Button
+        onClick={handleImport}
+        disabled={loading || !authed}
+        title={!authed ? "Please sign in to import orders" : undefined}
+        variant="secondary"
+        className="w-full sm:w-auto"
+      >
         {loading ? "Importing..." : "Import CSV"}
       </Button>
       {fileName && <span className="text-sm text-muted-foreground truncate">{fileName}</span>}
