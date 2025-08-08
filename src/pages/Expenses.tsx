@@ -36,6 +36,8 @@ export default function Expenses() {
   const [openAddCategory, setOpenAddCategory] = useState(false);
   const [openAddProduct, setOpenAddProduct] = useState(false);
   const [openImport, setOpenImport] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatParent, setNewCatParent] = useState<string>("");
 
   // Fetch auth user id
   useEffect(() => {
@@ -586,9 +588,12 @@ export default function Expenses() {
         <aside className="lg:col-span-4 xl:col-span-3">
           <Card>
             <CardContent className="pt-4 space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold">Categories</h2>
-                <p className="text-sm text-muted-foreground">Create parent categories and child categories.</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Categories</h2>
+                  <p className="text-sm text-muted-foreground">Create parent categories and child categories.</p>
+                </div>
+                <Button type="button" variant="outline" onClick={() => setOpenAddCategory(true)}><FolderPlus className="h-4 w-4" /> Add Category</Button>
               </div>
               <div className="space-y-2">
                 {parentCategories.map(p => (
