@@ -90,20 +90,28 @@ export default function Expenses() {
     load();
   }, [userId]);
 
-  // Load items for selected child category
+  // Load items for selected parent/child selection
   useEffect(() => {
-    if (!userId || !selectedChildId) { setItems([]); return; }
+    if (!userId || (!selectedChildId && !selectedParentId)) { setItems([]); return; }
     const load = async () => {
-      const { data } = await supabase
+      let query = supabase
         .from("expense_items")
         .select("id, user_id, category_id, name")
-        .eq("user_id", userId)
-        .eq("category_id", selectedChildId)
-        .order("name");
+        .eq("user_id", userId);
+
+      if (selectedChildId) {
+        query = query.eq("category_id", selectedChildId);
+      } else if (selectedParentId) {
+        const childIds = categories.filter(c => c.parent_id === selectedParentId).map(c => c.id);
+        const ids = [selectedParentId, ...childIds];
+        query = query.in("category_id", ids);
+      }
+
+      const { data } = await query.order("name");
       setItems(data || []);
     };
     load();
-  }, [userId, selectedChildId]);
+  }, [userId, selectedChildId, selectedParentId, categories]);
 
   const parentCategories = useMemo(() => categories.filter(c => !c.parent_id), [categories]);
   const childCategories = useMemo(() => categories.filter(c => !!c.parent_id), [categories]);
@@ -158,8 +166,16 @@ export default function Expenses() {
 
   // Product form with variants
   const [productName, setProductName] = useState("");
+  const [productParentId, setProductParentId] = useState<string>("");
   const [productChildId, setProductChildId] = useState<string>("");
+  const [newChildName, setNewChildName] = useState("");
+  const [savingChild, setSavingChild] = useState(false);
   const [variants, setVariants] = useState<VariantDraft[]>([{ size: "S", cost: "" }]);
+
+  const childrenOfProductParent = useMemo(
+    () => childCategories.filter(c => c.parent_id === (productParentId as any)),
+    [childCategories, productParentId]
+  );
 
   const addVariantRow = (preset?: Partial<VariantDraft>) => setVariants(v => [...v, { size: "", cost: "", ...preset }]);
   const removeVariantRow = (idx: number) => setVariants(v => v.filter((_, i) => i !== idx));
@@ -176,17 +192,27 @@ export default function Expenses() {
     ]);
   };
 
+  // Initialize modal selections when opened
+  useEffect(() => {
+    if (openAddProduct) {
+      setProductParentId(selectedParentId || "");
+      setProductChildId(selectedChildId || "");
+    }
+  }, [openAddProduct, selectedParentId, selectedChildId]);
+
   const onSaveProduct = async () => {
     if (!userId) return toast({ title: "Sign in required", description: "Please sign in to save products." });
-    const childId = productChildId || selectedChildId;
-    if (!childId) return toast({ title: "Select a child category" });
+    const parentId = (productParentId || selectedParentId) as UUID | null;
+    if (!parentId) return toast({ title: "Select a parent category" });
+    const childId = (productChildId || selectedChildId) as UUID | null;
     if (!productName.trim()) return toast({ title: "Product name required" });
     const cleanVariants = variants.filter(v => v.size && v.cost !== "");
     if (cleanVariants.length === 0) return toast({ title: "Add at least one variant with cost" });
 
+    const targetCategoryId = (childId || parentId) as UUID;
     const { data: itemRes, error: itemErr } = await supabase
       .from("expense_items")
-      .insert({ user_id: userId, category_id: childId, name: productName.trim() })
+      .insert({ user_id: userId, category_id: targetCategoryId, parent_category_id: parentId, name: productName.trim() })
       .select("id")
       .single();
     if (itemErr || !itemRes) return toast({ title: "Could not create product", description: itemErr?.message });
@@ -226,16 +252,23 @@ export default function Expenses() {
 
     setOpenAddProduct(false);
     setProductName("");
+    setProductParentId("");
     setProductChildId("");
     setVariants([{ size: "S", cost: "" }]);
-    // Refresh items list
-    if (selectedChildId) {
-      const { data } = await supabase
+    // Refresh items list for current selection (parent or child)
+    if (selectedChildId || selectedParentId) {
+      let query = supabase
         .from("expense_items")
         .select("id, user_id, category_id, name")
-        .eq("user_id", userId)
-        .eq("category_id", selectedChildId)
-        .order("name");
+        .eq("user_id", userId);
+      if (selectedChildId) {
+        query = query.eq("category_id", selectedChildId);
+      } else if (selectedParentId) {
+        const childIds = categories.filter(c => c.parent_id === selectedParentId).map(c => c.id);
+        const ids = [selectedParentId, ...childIds];
+        query = query.in("category_id", ids);
+      }
+      const { data } = await query.order("name");
       setItems(data || []);
     }
     toast({ title: "Product saved with variants" });
@@ -291,7 +324,8 @@ export default function Expenses() {
               childId = child?.id ?? null;
             }
             const useChildId = childId || selectedChildId;
-            if (!useChildId) continue;
+            const finalParentId = (parentId as UUID | null) || (useChildId ? (categories.find(c => c.id === useChildId)?.parent_id as UUID | null) : null) || (selectedParentId as UUID | null);
+            if (!useChildId && !finalParentId) continue;
 
             // ensure item
             let itemId: UUID | null = null;
@@ -299,13 +333,13 @@ export default function Expenses() {
               .from("expense_items")
               .select("id")
               .eq("user_id", userId)
-              .eq("category_id", useChildId)
+              .eq("category_id", (useChildId || finalParentId) as UUID)
               .eq("name", productName)
               .maybeSingle();
             if (iSel?.id) itemId = iSel.id;
             if (!itemId) {
               const { data: iIns } = await supabase
-                .from("expense_items").insert({ user_id: userId, category_id: useChildId, name: productName })
+                .from("expense_items").insert({ user_id: userId, category_id: (useChildId || finalParentId) as UUID, parent_category_id: finalParentId as UUID, name: productName })
                 .select("id").single();
               itemId = iIns?.id ?? null;
             }
@@ -371,17 +405,61 @@ export default function Expenses() {
               <div className="grid gap-4">
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <Label>Child category</Label>
-                    <Select value={productChildId || selectedChildId || ""} onValueChange={setProductChildId}>
-                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select child category" /></SelectTrigger>
+                    <Label>Parent category</Label>
+                    <Select value={productParentId || ""} onValueChange={(v) => { setProductParentId(v); setProductChildId(""); }}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select parent category" /></SelectTrigger>
                       <SelectContent>
-                        {childCategories.map(c => (
-                          <SelectItem key={c.id} value={c.id}>{categories.find(p => p.id === c.parent_id)?.name} / {c.name}</SelectItem>
+                        {parentCategories.map(p => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
+                    <Label>Child category (optional)</Label>
+                    <Select value={productChildId || ""} onValueChange={setProductChildId} disabled={!productParentId}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder={productParentId ? "Select child (optional)" : "Select parent first"} /></SelectTrigger>
+                      <SelectContent>
+                        {childrenOfProductParent.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {productParentId && childrenOfProductParent.length === 0 && (
+                      <div className="mt-2 flex gap-2">
+                        <Input placeholder="New child name" value={newChildName} onChange={(e) => setNewChildName(e.target.value)} />
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            if (!userId || !newChildName.trim()) return;
+                            try {
+                              setSavingChild(true);
+                              const { data, error } = await supabase
+                                .from("expense_categories")
+                                .insert({ user_id: userId, name: newChildName.trim(), parent_id: productParentId as any })
+                                .select("id, user_id, name, parent_id")
+                                .single();
+                              if (error) throw error;
+                              if (data) {
+                                setCategories(prev => [...prev, data as any]);
+                                setProductChildId(data.id as any);
+                                setNewChildName("");
+                                toast({ title: "Child category created" });
+                              }
+                            } catch (err: any) {
+                              toast({ title: "Could not create child", description: err?.message || "Try again" });
+                            } finally {
+                              setSavingChild(false);
+                            }
+                          }}
+                          disabled={!newChildName.trim() || savingChild}
+                        >
+                          {savingChild ? "Adding…" : "Create"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="sm:col-span-2">
                     <Label>Product name</Label>
                     <Input className="mt-1" placeholder="e.g. Heavyweight Hoodie" value={productName} onChange={(e) => setProductName(e.target.value)} />
                   </div>
@@ -587,7 +665,7 @@ export default function Expenses() {
                   <Button variant="outline" onClick={() => setOpenAddProduct(true)}><Plus className="h-4 w-4" /> Add Product</Button>
                 </div>
               </div>
-              <p className="text-sm text-muted-foreground">Select a child category to view products and variant costs. SKU links to Etsy order data later.</p>
+              <p className="text-sm text-muted-foreground">Select a parent or child category to view products and variant costs. SKU links to Etsy order data later.</p>
 
               <div className="overflow-auto rounded-md border">
                 <Table>
