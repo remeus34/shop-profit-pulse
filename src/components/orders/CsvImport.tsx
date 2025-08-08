@@ -26,10 +26,14 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
   };
 
   const parseNumber = (v: any) => {
-    if (v == null) return 0;
-    const s = String(v).replace(/[^0-9.-]/g, "");
-    const num = parseFloat(s);
-    return isNaN(num) ? 0 : num;
+    if (v == null || v === "") return 0;
+    const raw = String(v).trim();
+    const isParenNegative = /^\(.*\)$/.test(raw);
+    const cleaned = raw.replace(/[^0-9.-]/g, "");
+    let num = parseFloat(cleaned);
+    if (isNaN(num)) num = 0;
+    if (isParenNegative && num > 0) num = -num; // Handle (1.23) style negatives
+    return num;
   };
 
   useEffect(() => {
@@ -109,9 +113,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       const orderItemsByOrderId: Record<string, any[]> = {};
 
       for (const [orderId, items] of grouped.entries()) {
-        let totalPrice = 0;
-        let totalFees = 0;
-        let totalCogs = 0; // unknown in CSV; keep 0 by default
+        let totalCogs = 0; // COGS not present in Etsy CSV by default
 
         const first = items[0];
         const dateStr =
@@ -121,28 +123,83 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         const orderDate = dateStr ? new Date(dateStr) : undefined;
         const storeName = getVal(first, ["Shop Name", "Store", "Store Name"]) || "CSV Import";
 
-        const lineItems: any[] = [];
-        for (const row of items) {
-          const product =
-            getVal(row, ["Title", "Item Name", "Listing Title", "Product Name"]) || "Unknown";
-          const sku = getVal(row, ["SKU", "Sku"]) || null;
-          const size = getVal(row, ["Size", "Variation", "Variations"]) || null;
+        // Prefer default Etsy fields and avoid Adjusted values unless we must fall back
+        const revenue = (() => {
+          // Primary: default fields
+          let val = 0;
+          const primary =
+            getVal(first, ["Order Net", "Order Net Amount", "OrderNet", "Net Amount", "Net"]); // default net
+          val = parseNumber(primary);
+          // Secondary: totals/gross
+          if (!val) {
+            const secondary = getVal(first, ["Order Total", "Order Value", "Total", "Amount"]);
+            val = parseNumber(secondary);
+          }
+          // Fallback: sum of item totals if present
+          if (!val) {
+            val = items.reduce(
+              (sum, row) => sum + parseNumber(getVal(row, ["Item Total", "Price", "Unit Price", "ItemPrice"]) ?? 0),
+              0,
+            );
+          }
+          // Last resort: adjusted
+          if (!val) {
+            const adjusted = getVal(first, ["Adjusted Order Net", "Adjusted Net Amount", "Adjusted Order Total"]);
+            val = parseNumber(adjusted);
+          }
+          return val;
+        })();
+
+        const fees = (() => {
+          // Sum of common fee columns (default ones first)
+          const feeCols = [
+            "Card Processing Fees",
+            "Payment Processing Fee",
+            "Processing Fee",
+            "Transaction Fee",
+            "Listing Fees",
+            "Order Fees",
+            "Etsy Fees",
+            "Regulatory Operating fee",
+            "Regulatory Operating Fee",
+          ];
+          let sum = 0;
+          for (const col of feeCols) sum += parseNumber(getVal(first, [col]) ?? 0);
+
+          // If still zero, try row-wise generic fees
+          if (!sum) {
+            sum = items.reduce(
+              (acc, row) => acc + parseNumber(getVal(row, ["Fees", "Transaction Fee", "Processing Fee"]) ?? 0),
+              0,
+            );
+          }
+          // Last resort: adjusted fees
+          if (!sum) sum = parseNumber(getVal(first, ["Adjusted Fees"]) ?? 0);
+          return sum;
+        })();
+
+        // Quantity (sum across rows if available)
+        const quantityTotal = items.reduce((acc, row) => {
           const qtyRaw = getVal(row, ["Quantity", "Qty"]) ?? 1;
-          const quantity = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
-          const price = parseNumber(
-            getVal(row, ["Item Total", "Price", "Unit Price", "ItemPrice"]) ?? 0
-          );
-          const fees = parseNumber(
-            getVal(row, ["Fees", "Transaction Fee", "Processing Fee"]) ?? 0
-          );
-          const cogs = 0; // not available from Etsy CSV typically
+          const q = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
+          return acc + q;
+        }, 0) || 1;
 
-          totalPrice += price;
-          totalFees += fees;
-          totalCogs += cogs;
+        const profit = revenue - fees - totalCogs;
 
-          lineItems.push({ product_name: product, sku, size, quantity, price, fees, cogs });
-        }
+        // Single summary line per order to ensure financials show up in the table
+        const lineItems = [
+          {
+            product_name: "Order Summary",
+            sku: null,
+            size: null,
+            quantity: quantityTotal,
+            price: revenue,
+            fees,
+            cogs: totalCogs,
+            profit,
+          },
+        ];
 
         ordersPayload.push({
           user_id: user.id,
@@ -151,8 +208,8 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
           store_name: storeName ?? null,
           shop_id: null,
           source: "csv",
-          total_price: totalPrice,
-          total_fees: totalFees,
+          total_price: revenue,
+          total_fees: fees,
           total_cogs: totalCogs,
         });
         orderItemsByOrderId[orderId] = lineItems;
