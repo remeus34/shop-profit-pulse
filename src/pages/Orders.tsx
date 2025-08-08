@@ -45,9 +45,6 @@ export default function Orders() {
             <a href="/connect">
               <Button>Connect Etsy Shop</Button>
             </a>
-            <a href="/auth" className="ml-auto">
-              <Button variant="outline">Sign in</Button>
-            </a>
           </div>
         </CardContent>
       </Card>

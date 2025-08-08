@@ -16,6 +16,7 @@ import Ads from "./pages/Ads";
 import Research from "./pages/Research";
 import Connect from "./pages/Connect";
 import Auth from "./pages/Auth";
+import RequireAuth from "./components/auth/RequireAuth";
 
 const queryClient = new QueryClient();
 
@@ -27,20 +28,22 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Index />} />
-            <Route path="/orders" element={<Orders />} />
-            <Route path="/listings" element={<Listings />} />
-            <Route path="/insights" element={<ProductInsights />} />
-            <Route path="/shipping" element={<Shipping />} />
-            <Route path="/expenses" element={<Expenses />} />
-            <Route path="/cogs" element={<Cogs />} />
-            <Route path="/ads" element={<Ads />} />
-            <Route path="/research" element={<Research />} />
-            <Route path="/connect" element={<Connect />} />
-            <Route path="/auth" element={<Auth />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<Index />} />
+              <Route path="/orders" element={<Orders />} />
+              <Route path="/listings" element={<Listings />} />
+              <Route path="/insights" element={<ProductInsights />} />
+              <Route path="/shipping" element={<Shipping />} />
+              <Route path="/expenses" element={<Expenses />} />
+              <Route path="/cogs" element={<Cogs />} />
+              <Route path="/ads" element={<Ads />} />
+              <Route path="/research" element={<Research />} />
+              <Route path="/connect" element={<Connect />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>
