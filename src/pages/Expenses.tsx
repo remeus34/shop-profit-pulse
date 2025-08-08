@@ -58,6 +58,7 @@ export default function Expenses() {
   const [openImport, setOpenImport] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatParent, setNewCatParent] = useState<string>("");
+  const [savingCategory, setSavingCategory] = useState(false);
 
   // Fetch auth user id
   useEffect(() => {
@@ -112,23 +113,27 @@ export default function Expenses() {
   const categoryForm = useForm<{ name: string; parent_id: string | "" }>({ defaultValues: { name: "", parent_id: "" } });
   const onAddCategory = async (values: { name: string; parent_id: string | "" }) => {
     if (!userId) return toast({ title: "Sign in required", description: "Please sign in to save categories." });
-    const { error } = await supabase.from("expense_categories").insert({
-      user_id: userId,
-      name: values.name.trim(),
-      parent_id: values.parent_id ? values.parent_id : null,
-    });
-    if (error) return toast({ title: "Could not create category", description: error.message });
-    setOpenAddCategory(false);
-    categoryForm.reset({ name: "", parent_id: "" });
-    // reload
-    const { data: cats } = await supabase
-      .from("expense_categories")
-      .select("id, user_id, name, parent_id")
-      .eq("user_id", userId)
-      .order("parent_id", { ascending: true, nullsFirst: true })
-      .order("name", { ascending: true });
-    setCategories(cats || []);
-    toast({ title: "Category added" });
+    try {
+      setSavingCategory(true);
+      const { data, error } = await supabase
+        .from("expense_categories")
+        .insert({
+          user_id: userId,
+          name: values.name.trim(),
+          parent_id: values.parent_id ? values.parent_id : null,
+        })
+        .select("id, user_id, name, parent_id")
+        .single();
+      if (error) throw error;
+      if (data) setCategories(prev => [...prev, data as any]);
+      setOpenAddCategory(false);
+      categoryForm.reset({ name: "", parent_id: "" });
+      toast({ title: "Category added" });
+    } catch (err: any) {
+      toast({ title: "Could not create category", description: err?.message || "Try again" });
+    } finally {
+      setSavingCategory(false);
+    }
   };
 
   const renameCategory = async (cat: Category) => {
@@ -514,7 +519,7 @@ export default function Expenses() {
                 </select>
               </div>
               <div className="flex gap-2">
-                <Button type="submit"><Plus className="h-4 w-4" /> Save</Button>
+                <Button type="submit" disabled={savingCategory}>{savingCategory ? "Saving…" : (<><Plus className="h-4 w-4" /> Save</>)}</Button>
                 <Button type="button" variant="outline" onClick={() => setOpenAddCategory(false)}>Cancel</Button>
               </div>
             </form>
