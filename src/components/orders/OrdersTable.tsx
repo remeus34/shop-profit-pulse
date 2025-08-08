@@ -53,21 +53,26 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
       const { data, error } = await q;
       if (error) throw error;
 
-      // Flatten nested rows
-      return (data || []).map((r: any) => ({
-        id: r.id,
-        order_id: r.orders?.order_id,
-        order_date: r.orders?.order_date,
-        store_name: r.orders?.store_name,
-        product_name: r.product_name,
-        sku: r.sku,
-        size: r.size,
-        quantity: r.quantity,
-        price: r.price,
-        fees: r.fees,
-        cogs: r.cogs,
-        profit: r.profit,
-      }));
+      return (data || []).map((r: any) => {
+        const price = r.price ?? 0;
+        const fees = r.fees ?? 0;
+        const cogs = r.cogs ?? 0;
+        const profit = r.profit ?? (price - fees - cogs);
+        return {
+          id: r.id,
+          order_id: r.orders?.order_id,
+          order_date: r.orders?.order_date,
+          store_name: r.orders?.store_name,
+          product_name: r.product_name,
+          sku: r.sku,
+          size: r.size,
+          quantity: r.quantity,
+          price,
+          fees,
+          cogs,
+          profit,
+        };
+      });
     },
   });
 

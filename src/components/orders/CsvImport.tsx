@@ -185,8 +185,6 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
           return acc + q;
         }, 0) || 1;
 
-        const profit = revenue - fees - totalCogs;
-
         // Single summary line per order to ensure financials show up in the table
         const lineItems = [
           {
@@ -197,7 +195,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             price: revenue,
             fees,
             cogs: totalCogs,
-            profit,
+            // Do not insert profit directly; DB may compute it or we compute client-side
           },
         ];
 
