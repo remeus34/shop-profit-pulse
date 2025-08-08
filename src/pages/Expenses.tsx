@@ -25,6 +25,26 @@ type VariantDraft = { size: string; color?: string; sku?: string; cost: string; 
 const SUGGESTED_TYPES = ["T-Shirt", "Hoodie", "Sweatshirt", "Mug", "Poster", "Sticker"];
 const SUGGESTED_SIZES = ["S", "M", "L", "XL", "2XL", "3XL"];
 
+
+class ExpensesErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: any }> {
+  constructor(props: any) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error: any) { return { error }; }
+  componentDidCatch(error: any, info: any) { console.error('Expenses boundary caught', error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-4">
+          <h2 className="text-lg font-semibold">Something went wrong</h2>
+          <p className="text-sm text-muted-foreground">Please refresh the page. If it happens again, share this message with support.</p>
+          <pre className="mt-2 whitespace-pre-wrap text-xs bg-muted p-2 rounded">{String(this.state.error)}</pre>
+          <div className="mt-3"><Button variant="outline" onClick={() => this.setState({ error: null })}>Reset</Button></div>
+        </div>
+      );
+    }
+    return this.props.children as any;
+  }
+}
+
 export default function Expenses() {
   const [userId, setUserId] = useState<UUID | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -528,50 +548,44 @@ export default function Expenses() {
               <h2 className="text-lg font-semibold">Add category</h2>
               <Button variant="ghost" onClick={() => setOpenAddCategory(false)}>Close</Button>
             </div>
-            <Form {...categoryForm}>
-              <form onSubmit={categoryForm.handleSubmit(onAddCategory)} className="space-y-4">
-                <FormField
-                  control={categoryForm.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. Products, Packaging, Software" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await onAddCategory({ name: newCatName, parent_id: newCatParent });
+                setNewCatName("");
+                setNewCatParent("");
+              }}
+              className="space-y-4"
+            >
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input
+                  placeholder="e.g. Products, Packaging, Software"
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  required
                 />
-                <FormField
-                  control={categoryForm.control}
-                  name="parent_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Parent (optional)</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="None (create as parent)" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="">None</SelectItem>
-                          {parentCategories.map(p => (
-                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="flex gap-2">
-                  <Button type="submit"><Plus className="h-4 w-4" /> Save</Button>
-                  <Button type="button" variant="outline" onClick={() => setOpenAddCategory(false)}>Cancel</Button>
-                </div>
-              </form>
-            </Form>
+              </div>
+              <div className="space-y-2">
+                <Label>Parent (optional)</Label>
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={newCatParent}
+                  onChange={(e) => setNewCatParent(e.target.value)}
+                >
+                  <option value="">None</option>
+                  {parentCategories.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <Button type="submit"><Plus className="h-4 w-4" /> Save</Button>
+                <Button type="button" variant="outline" onClick={() => setOpenAddCategory(false)}>Cancel</Button>
+              </div>
+            </form>
           </CardContent>
         </Card>
       )}
