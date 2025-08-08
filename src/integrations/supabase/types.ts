@@ -50,6 +50,54 @@ export type Database = {
         }
         Relationships: []
       }
+      etsy_fee_settings: {
+        Row: {
+          created_at: string
+          currency: string | null
+          id: string
+          listing_fee: number
+          offsite_ads_enabled: boolean
+          offsite_ads_pct: number
+          processing_fixed: number
+          processing_pct: number
+          shop_id: string | null
+          store_name: string | null
+          transaction_pct: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          currency?: string | null
+          id?: string
+          listing_fee?: number
+          offsite_ads_enabled?: boolean
+          offsite_ads_pct?: number
+          processing_fixed?: number
+          processing_pct?: number
+          shop_id?: string | null
+          store_name?: string | null
+          transaction_pct?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          currency?: string | null
+          id?: string
+          listing_fee?: number
+          offsite_ads_enabled?: boolean
+          offsite_ads_pct?: number
+          processing_fixed?: number
+          processing_pct?: number
+          shop_id?: string | null
+          store_name?: string | null
+          transaction_pct?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       expense_categories: {
         Row: {
           created_at: string
@@ -245,9 +293,15 @@ export type Database = {
       orders: {
         Row: {
           created_at: string
+          external_shipping_cost: number
           id: string
+          listing_fee: number
+          offsite_ads_fee: number
           order_date: string | null
           order_id: string
+          other_expenses: number
+          processing_fee: number
+          shipping_label_fee: number
           shop_id: string | null
           source: string
           store_name: string | null
@@ -255,14 +309,21 @@ export type Database = {
           total_fees: number | null
           total_price: number | null
           total_profit: number | null
+          transaction_fee: number
           updated_at: string
           user_id: string
         }
         Insert: {
           created_at?: string
+          external_shipping_cost?: number
           id?: string
+          listing_fee?: number
+          offsite_ads_fee?: number
           order_date?: string | null
           order_id: string
+          other_expenses?: number
+          processing_fee?: number
+          shipping_label_fee?: number
           shop_id?: string | null
           source: string
           store_name?: string | null
@@ -270,14 +331,21 @@ export type Database = {
           total_fees?: number | null
           total_price?: number | null
           total_profit?: number | null
+          transaction_fee?: number
           updated_at?: string
           user_id: string
         }
         Update: {
           created_at?: string
+          external_shipping_cost?: number
           id?: string
+          listing_fee?: number
+          offsite_ads_fee?: number
           order_date?: string | null
           order_id?: string
+          other_expenses?: number
+          processing_fee?: number
+          shipping_label_fee?: number
           shop_id?: string | null
           source?: string
           store_name?: string | null
@@ -285,6 +353,7 @@ export type Database = {
           total_fees?: number | null
           total_price?: number | null
           total_profit?: number | null
+          transaction_fee?: number
           updated_at?: string
           user_id?: string
         }
