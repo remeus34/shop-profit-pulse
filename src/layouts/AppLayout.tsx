@@ -10,8 +10,8 @@ export default function AppLayout() {
         <AppSidebar />
         <div className="flex-1 flex flex-col">
           <header className="h-14 flex items-center border-b px-4 gap-2">
-            <SidebarTrigger />
-            <NavLink to="/" className="font-semibold">
+            <SidebarTrigger className="hover-scale" />
+            <NavLink to="/" className="font-semibold story-link">
               Etsy Profit Radar
             </NavLink>
             <div className="ml-auto flex items-center gap-2">

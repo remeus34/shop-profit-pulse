@@ -3,10 +3,10 @@ import { Card, CardContent } from "@/components/ui/card";
 
 export default function Research() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-enter">
       <SEO title="Product Research | Etsy Profit Radar" description="Discover trending products, keywords, and underserved niches." />
-      <h1 className="text-2xl font-bold">Professional Product Research</h1>
-      <Card>
+      <h1 className="text-2xl font-bold animate-fade-in">Professional Product Research</h1>
+      <Card className="animate-scale-in">
         <CardContent className="pt-4">
           <p className="text-muted-foreground">Analyze competitor pricing, keywords, and market saturation to find high ROI ideas.</p>
         </CardContent>

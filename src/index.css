@@ -96,3 +96,37 @@ All colors MUST be HSL.
     @apply bg-background text-foreground font-sans;
   }
 }
+
+@layer utilities {
+  .story-link {
+    position: relative;
+    display: inline-block;
+  }
+  .story-link::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    width: 100%;
+    background: hsl(var(--primary));
+    transform: scaleX(0);
+    transform-origin: bottom right;
+    transition: transform 300ms var(--transition-smooth);
+  }
+  .story-link:hover::after {
+    transform: scaleX(1);
+    transform-origin: bottom left;
+  }
+
+  .hover-scale { 
+    transition: transform 200ms ease; 
+  }
+  .hover-scale:hover { 
+    transform: scale(1.05); 
+  }
+
+  .pulse {
+    animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite;
+  }
+}

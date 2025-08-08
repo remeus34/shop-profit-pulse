@@ -23,8 +23,8 @@ const Index = () => {
         canonical="/"
       />
 
-      <section className="grid gap-6">
-        <div className="flex flex-col lg:flex-row items-center gap-6 rounded-lg border bg-card p-6 shadow-sm">
+      <section className="grid gap-6 animate-enter">
+        <div className="flex flex-col lg:flex-row items-center gap-6 rounded-lg border bg-card p-6 shadow-sm animate-scale-in">
           <img
             src={heroImage}
             alt="Analytics dashboard hero for Etsy Profit Radar"
@@ -40,29 +40,29 @@ const Index = () => {
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <a href="/connect">
-                <Button>Connect Etsy</Button>
+                <Button className="hover-scale">Connect Etsy</Button>
               </a>
               <a href="/orders">
-                <Button variant="secondary">Upload CSV</Button>
+                <Button variant="secondary" className="hover-scale">Upload CSV</Button>
               </a>
             </div>
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          <Card>
+          <Card className="animate-fade-in hover-scale">
             <CardContent className="pt-4">
               <div className="text-sm text-muted-foreground">Revenue (7d)</div>
               <div className="mt-1 text-2xl font-semibold">$12,340</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="animate-fade-in hover-scale">
             <CardContent className="pt-4">
               <div className="text-sm text-muted-foreground">Expenses (7d)</div>
               <div className="mt-1 text-2xl font-semibold">$8,920</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="animate-fade-in hover-scale">
             <CardContent className="pt-4">
               <div className="text-sm text-muted-foreground">Net Profit (7d)</div>
               <div className="mt-1 text-2xl font-semibold">$3,420</div>
@@ -70,7 +70,7 @@ const Index = () => {
           </Card>
         </div>
 
-        <Card>
+        <Card className="animate-scale-in">
           <CardContent className="pt-4">
             <div className="mb-2 font-medium">Profit Trend (7 days)</div>
             <div className="h-64">
