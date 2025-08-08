@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      etsy_connections: {
+        Row: {
+          access_token: string | null
+          created_at: string
+          id: string
+          refresh_token: string | null
+          shop_id: string
+          shop_name: string | null
+          token_expires_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          created_at?: string
+          id?: string
+          refresh_token?: string | null
+          shop_id: string
+          shop_name?: string | null
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          created_at?: string
+          id?: string
+          refresh_token?: string | null
+          shop_id?: string
+          shop_name?: string | null
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       expense_categories: {
         Row: {
           created_at: string
@@ -149,6 +185,110 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      order_items: {
+        Row: {
+          cogs: number
+          created_at: string
+          fees: number
+          id: string
+          order_id_fk: string
+          price: number
+          product_name: string | null
+          profit: number | null
+          quantity: number
+          size: string | null
+          sku: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cogs?: number
+          created_at?: string
+          fees?: number
+          id?: string
+          order_id_fk: string
+          price?: number
+          product_name?: string | null
+          profit?: number | null
+          quantity?: number
+          size?: string | null
+          sku?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cogs?: number
+          created_at?: string
+          fees?: number
+          id?: string
+          order_id_fk?: string
+          price?: number
+          product_name?: string | null
+          profit?: number | null
+          quantity?: number
+          size?: string | null
+          sku?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fk_fkey"
+            columns: ["order_id_fk"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          created_at: string
+          id: string
+          order_date: string | null
+          order_id: string
+          shop_id: string | null
+          source: string
+          store_name: string | null
+          total_cogs: number | null
+          total_fees: number | null
+          total_price: number | null
+          total_profit: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          order_date?: string | null
+          order_id: string
+          shop_id?: string | null
+          source: string
+          store_name?: string | null
+          total_cogs?: number | null
+          total_fees?: number | null
+          total_price?: number | null
+          total_profit?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          order_date?: string | null
+          order_id?: string
+          shop_id?: string | null
+          source?: string
+          store_name?: string | null
+          total_cogs?: number | null
+          total_fees?: number | null
+          total_price?: number | null
+          total_profit?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       vendors: {
         Row: {
