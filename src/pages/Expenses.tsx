@@ -53,7 +53,7 @@ export default function Expenses() {
   const [selectedParentId, setSelectedParentId] = useState<UUID | null>(null);
   const [selectedChildId, setSelectedChildId] = useState<UUID | null>(null);
 
-  const [openAddCategory, setOpenAddCategory] = useState(false);
+  const [openAddCategory, setOpenAddCategory] = useState(true);
   const [openAddProduct, setOpenAddProduct] = useState(false);
   const [openImport, setOpenImport] = useState(false);
   const [newCatName, setNewCatName] = useState("");
