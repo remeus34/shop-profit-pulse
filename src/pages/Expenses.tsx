@@ -329,6 +329,7 @@ export default function Expenses() {
         <div className="flex flex-wrap gap-2">
           <Dialog open={openAddCategory} onOpenChange={(v) => { console.log('openAddCategory onOpenChange', v); setOpenAddCategory(v); }}>
             <Button type="button" variant="secondary" className="hover-scale" onClick={() => { console.log('Add Category click'); setOpenAddCategory(true); }}><FolderPlus className="h-4 w-4" /> Add Category</Button>
+            {openAddCategory && <span className="text-xs text-muted-foreground">Opening…</span>}
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Add category</DialogTitle>
@@ -517,6 +518,61 @@ export default function Expenses() {
           </Dialog>
         </div>
       </header>
+
+      {openAddCategory && (
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-semibold">Add category</h2>
+              <Button variant="ghost" onClick={() => setOpenAddCategory(false)}>Close</Button>
+            </div>
+            <Form {...categoryForm}>
+              <form onSubmit={categoryForm.handleSubmit(onAddCategory)} className="space-y-4">
+                <FormField
+                  control={categoryForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. Products, Packaging, Software" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={categoryForm.control}
+                  name="parent_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Parent (optional)</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="None (create as parent)" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">None</SelectItem>
+                          {parentCategories.map(p => (
+                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="flex gap-2">
+                  <Button type="submit"><Plus className="h-4 w-4" /> Save</Button>
+                  <Button type="button" variant="outline" onClick={() => setOpenAddCategory(false)}>Cancel</Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      )}
 
       {!userId && (
         <Card>
