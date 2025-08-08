@@ -327,10 +327,8 @@ export default function Expenses() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Operating Expenses</h1>
         <div className="flex flex-wrap gap-2">
-          <Dialog open={openAddCategory} onOpenChange={setOpenAddCategory}>
-            <DialogTrigger asChild>
-              <Button variant="secondary" className="hover-scale" onClick={() => setOpenAddCategory(true)}><FolderPlus className="h-4 w-4" /> Add Category</Button>
-            </DialogTrigger>
+          <Dialog open={openAddCategory} onOpenChange={(v) => { console.log('openAddCategory onOpenChange', v); setOpenAddCategory(v); }}>
+            <Button type="button" variant="secondary" className="hover-scale" onClick={() => { console.log('Add Category click'); setOpenAddCategory(true); }}><FolderPlus className="h-4 w-4" /> Add Category</Button>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Add category</DialogTitle>
