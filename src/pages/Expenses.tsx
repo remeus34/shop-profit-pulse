@@ -344,83 +344,15 @@ export default function Expenses() {
   };
 
   return (
-    <main className="space-y-6 animate-fade-in">
+    <ExpensesErrorBoundary>
+      <main className="space-y-6 animate-fade-in">
       <SEO title="Operating Expenses | Etsy Profit Radar" description="Track non-product overhead and analyze trends." />
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Operating Expenses</h1>
         <div className="flex flex-wrap gap-2">
-          <Dialog open={openAddCategory} onOpenChange={(v) => { console.log('openAddCategory onOpenChange', v); setOpenAddCategory(v); }}>
-            <Button type="button" variant="secondary" className="hover-scale" onClick={() => { console.log('Add Category click'); setOpenAddCategory(true); }}><FolderPlus className="h-4 w-4" /> Add Category</Button>
-            {openAddCategory && <span className="text-xs text-muted-foreground">Opening…</span>}
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Add category</DialogTitle>
-                <DialogDescription>Create parent or child categories to organize your costs.</DialogDescription>
-              </DialogHeader>
-              <Form {...categoryForm}>
-                <form onSubmit={categoryForm.handleSubmit(onAddCategory)} className="space-y-4">
-                  <FormField
-                    control={categoryForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. Products, Packaging, Software" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={categoryForm.control}
-                    name="parent_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Parent (optional)</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value ?? ""}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="None (create as parent)" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="">None</SelectItem>
-                            {parentCategories.map(p => (
-                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="flex gap-2">
-                    <Button type="submit"><Plus className="h-4 w-4" /> Save</Button>
-                    <Button type="button" variant="outline" onClick={() => setOpenAddCategory(false)}>Cancel</Button>
-                  </div>
-                </form>
-              </Form>
-              <div className="pt-2">
-                <p className="text-sm text-muted-foreground mb-2">Suggested Etsy product types</p>
-                <div className="flex flex-wrap gap-2">
-                  {SUGGESTED_TYPES.map(s => (
-                    <Button key={s} variant="outline" size="sm" onClick={async () => {
-                      if (!userId) return;
-                      const parent = parentCategories.find(p => p.name === "Products");
-                      const parent_id = parent?.id ?? null;
-                      const { data } = await supabase
-                        .from("expense_categories")
-                        .insert({ user_id: userId, name: s, parent_id })
-                        .select("id, user_id, name, parent_id").single();
-                      if (data) setCategories(prev => [...prev, data as any]);
-                      toast({ title: `${s} added` });
-                    }}>{s}</Button>
-                  ))}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button type="button" variant="secondary" className="hover-scale" onClick={() => setOpenAddCategory(true)}>
+            <FolderPlus className="h-4 w-4" /> Add Category
+          </Button>
 
           <Dialog open={openAddProduct} onOpenChange={setOpenAddProduct}>
             <DialogTrigger asChild>
@@ -684,7 +616,8 @@ export default function Expenses() {
           </Card>
         </section>
       </section>
-    </main>
+      </main>
+    </ExpensesErrorBoundary>
   );
 }
 
