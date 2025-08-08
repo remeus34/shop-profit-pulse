@@ -332,8 +332,22 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         if (iRows.length) {
           const lines: any[] = [];
           for (const row of iRows) {
-            const productName =
-              getVal(row, ["Item Name", "ItemName", "Title", "Product Title", "ProductTitle"]) || "Item";
+            const rawName =
+              getVal(row, ["Item Name", "ItemName", "Title", "Product Title", "ProductTitle"]);
+            const normalizeName = (n: any) => String(n ?? "").trim();
+            const isPlaceholderName = (n: string) => {
+              const s = normalizeName(n).toLowerCase();
+              return !s || s === "item" || s === "product" || s === "title";
+            };
+            let productName = normalizeName(rawName);
+            if (isPlaceholderName(productName)) {
+              // Find first meaningful item name within this order's item rows
+              const fallbackName = iRows
+                .map((r) => normalizeName(getVal(r, ["Item Name", "ItemName", "Title", "Product Title", "ProductTitle"]) || ""))
+                .find((n) => !isPlaceholderName(n));
+              if (fallbackName) productName = fallbackName;
+            }
+            if (!productName) productName = "Unknown item";
             const sku = getVal(row, ["SKU", "Sku", "Product SKU", "ProductSKU"]) ?? null;
 
             let size: string | null = null;
@@ -341,7 +355,8 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             if (sizeCol) size = String(sizeCol);
             const variations = getVal(row, ["Variations", "Variation", "Options", "Option"]) || "";
             if (!size && variations) {
-              const m = String(variations).match(/size\s*:\s*([^,;|]+)/i);
+              // Common formats: "Size: M, Color: Black" or "size-M"
+              const m = String(variations).match(/size\s*[:\-]\s*([^,;|]+)/i);
               if (m) size = m[1].trim();
             }
 
