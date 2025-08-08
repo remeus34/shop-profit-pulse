@@ -55,14 +55,17 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
 
   const handleImport = async () => {
     try {
-      if (!fileRef.current?.files?.[0]) {
-        toast({ title: "No file selected", description: "Please choose a CSV file to import." });
+      const files = Array.from(fileRef.current?.files || []);
+      if (!files.length) {
+        toast({ title: "No files selected", description: "Please choose one or two Etsy CSV files to import." });
         return;
       }
 
       setLoading(true);
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         toast({
           title: "Sign in required",
@@ -74,48 +77,122 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         return;
       }
 
-      const file = fileRef.current.files[0];
-
-      const rows: any[] = await new Promise((resolve, reject) => {
-        Papa.parse(file, {
-          header: true,
-          skipEmptyLines: true,
-          worker: true,
-          complete: (res) => resolve(res.data as any[]),
-          error: (err) => reject(err),
+      // Parse all CSVs
+      const parseCsv = (file: File) =>
+        new Promise<any[]>((resolve, reject) => {
+          Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            worker: true,
+            complete: (res) => resolve((res.data as any[]) || []),
+            error: (err) => reject(err),
+          });
         });
+
+      const parsedFiles = await Promise.all(files.map(parseCsv));
+
+      // Heuristics to detect Items vs Summary CSVs
+      const isItemsFile = (rows: any[]) => {
+        if (!rows?.length) return false;
+        const keys = Object.keys(rows[0] || {}).map((k) => normalize(k));
+        const hasItemName = keys.includes(normalize("Item Name")) || keys.includes(normalize("Title"));
+        const hasSku = keys.includes(normalize("SKU")) || keys.includes(normalize("Product SKU"));
+        const hasVariations = keys.includes(normalize("Variations")) || keys.includes(normalize("Variation")) || keys.includes(normalize("Options"));
+        return hasItemName || hasSku || hasVariations;
+      };
+
+      const isSummaryFile = (rows: any[]) => {
+        if (!rows?.length) return false;
+        const keys = Object.keys(rows[0] || {}).map((k) => normalize(k));
+        const netHints = ["Order Net", "Order Net Amount", "OrderNet", "Net Amount", "Net", "Order Total", "Total", "Amount"]; 
+        const feeHints = [
+          "Card Processing Fees",
+          "Payment Processing Fee",
+          "Processing Fee",
+          "Transaction Fee",
+          "Listing Fees",
+          "Order Fees",
+          "Etsy Fees",
+          "Regulatory Operating fee",
+          "Regulatory Operating Fee",
+        ];
+        const hasNet = netHints.map(normalize).some((h) => keys.includes(h));
+        const hasFees = feeHints.map(normalize).some((h) => keys.includes(h));
+        return hasNet || hasFees;
+      };
+
+      let itemRows: any[] = [];
+      let summaryRows: any[] = [];
+      parsedFiles.forEach((rows) => {
+        if (isItemsFile(rows)) itemRows = itemRows.concat(rows);
+        if (isSummaryFile(rows)) summaryRows = summaryRows.concat(rows);
       });
 
-      if (!rows.length) {
-        toast({ title: "No rows found", description: "The CSV appears to be empty." });
+      if (!itemRows.length && !summaryRows.length) {
+        toast({ title: "No valid Etsy CSV detected", description: "Please upload Sold Orders and/or Sold Order Items CSVs." });
         setLoading(false);
         return;
       }
 
-      // Group by Order ID
-      const grouped = new Map<string, any[]>();
-      for (const r of rows) {
-        const oid = getVal(r, ["Order ID", "OrderID", "Receipt ID", "ReceiptID", "Order Number"]) || "";
-        const orderId = String(oid || "").trim();
+      if (!itemRows.length) {
+        toast({ title: "Items CSV missing", description: "Importing summary-only rows. Item details (name/size/SKU) will be missing." });
+      }
+      if (!summaryRows.length) {
+        toast({ title: "Orders summary CSV missing", description: "Totals derived from items; fees will be set to 0." });
+      }
+
+      // Group rows by Order ID
+      const orderIdsSet = new Set<string>();
+      const itemsGrouped = new Map<string, any[]>();
+      const summaryGrouped = new Map<string, any[]>();
+
+      const extractOrderId = (r: Record<string, any>) =>
+        String(
+          getVal(r, ["Order ID", "OrderID", "Receipt ID", "ReceiptID", "Order Number"]) || ""
+        ).trim();
+
+      for (const r of itemRows) {
+        const orderId = extractOrderId(r);
         if (!orderId) continue;
-        if (!grouped.has(orderId)) grouped.set(orderId, []);
-        grouped.get(orderId)!.push(r);
+        if (!itemsGrouped.has(orderId)) itemsGrouped.set(orderId, []);
+        itemsGrouped.get(orderId)!.push(r);
+        orderIdsSet.add(orderId);
+      }
+      for (const r of summaryRows) {
+        const orderId = extractOrderId(r);
+        if (!orderId) continue;
+        if (!summaryGrouped.has(orderId)) summaryGrouped.set(orderId, []);
+        summaryGrouped.get(orderId)!.push(r);
+        orderIdsSet.add(orderId);
       }
 
-      if (!grouped.size) {
-        toast({ title: "No Order IDs detected", description: "Ensure the CSV includes an 'Order ID' column." });
+      if (!orderIdsSet.size) {
+        toast({ title: "No Order IDs detected", description: "Ensure your CSVs include an 'Order ID' column." });
         setLoading(false);
         return;
       }
 
-      // Build orders payload
       const ordersPayload: any[] = [];
       const orderItemsByOrderId: Record<string, any[]> = {};
 
-      for (const [orderId, items] of grouped.entries()) {
-        let totalCogs = 0; // COGS not present in Etsy CSV by default
+      const deriveRevenueFromItems = (list: any[]) =>
+        list.reduce((acc, row) => {
+          const qtyRaw = getVal(row, ["Quantity", "Qty"]) ?? 1;
+          const q = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
+          let val = parseNumber(getVal(row, ["Item Total", "Line Item Total", "Amount"]) ?? 0);
+          if (!val) {
+            const unit = parseNumber(getVal(row, ["Price", "Unit Price"]) ?? 0);
+            val = unit * q;
+          }
+          return acc + (isNaN(val) ? 0 : val);
+        }, 0);
 
-        const first = items[0];
+      for (const orderId of Array.from(orderIdsSet)) {
+        const sRows = summaryGrouped.get(orderId) || [];
+        const iRows = itemsGrouped.get(orderId) || [];
+        const first = sRows[0] || iRows[0] || {};
+
+        // Date and store
         const dateStr =
           getVal(first, ["Sale Date", "Order Date", "Created At", "CreatedAt"]) ||
           getVal(first, ["SaleDate", "OrderDate"]) ||
@@ -123,82 +200,59 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         const orderDate = dateStr ? new Date(dateStr) : undefined;
         const storeName = getVal(first, ["Shop Name", "Store", "Store Name"]) || "CSV Import";
 
-        // Prefer default Etsy fields and avoid Adjusted values unless we must fall back
+        // Revenue
         const revenue = (() => {
-          // Primary: default fields
-          let val = 0;
-          const primary =
-            getVal(first, ["Order Net", "Order Net Amount", "OrderNet", "Net Amount", "Net"]); // default net
-          val = parseNumber(primary);
-          // Secondary: totals/gross
-          if (!val) {
-            const secondary = getVal(first, ["Order Total", "Order Value", "Total", "Amount"]);
-            val = parseNumber(secondary);
+          if (sRows.length) {
+            let val = 0;
+            const primary = getVal(first, ["Order Net", "Order Net Amount", "OrderNet", "Net Amount", "Net"]);
+            val = parseNumber(primary);
+            if (!val) {
+              const secondary = getVal(first, ["Order Total", "Order Value", "Total", "Amount"]);
+              val = parseNumber(secondary);
+            }
+            if (!val && iRows.length) {
+              val = deriveRevenueFromItems(iRows);
+            }
+            if (!val) {
+              const adjusted = getVal(first, ["Adjusted Order Net", "Adjusted Net Amount", "Adjusted Order Total"]);
+              val = parseNumber(adjusted);
+            }
+            return val;
           }
-          // Fallback: sum of item totals if present
-          if (!val) {
-            val = items.reduce(
-              (sum, row) => sum + parseNumber(getVal(row, ["Item Total", "Price", "Unit Price", "ItemPrice"]) ?? 0),
-              0,
-            );
-          }
-          // Last resort: adjusted
-          if (!val) {
-            const adjusted = getVal(first, ["Adjusted Order Net", "Adjusted Net Amount", "Adjusted Order Total"]);
-            val = parseNumber(adjusted);
-          }
-          return val;
+          return deriveRevenueFromItems(iRows);
         })();
 
+        // Fees
         const fees = (() => {
-          // Sum of common fee columns (default ones first)
-          const feeCols = [
-            "Card Processing Fees",
-            "Payment Processing Fee",
-            "Processing Fee",
-            "Transaction Fee",
-            "Listing Fees",
-            "Order Fees",
-            "Etsy Fees",
-            "Regulatory Operating fee",
-            "Regulatory Operating Fee",
-          ];
-          let sum = 0;
-          for (const col of feeCols) sum += parseNumber(getVal(first, [col]) ?? 0);
-
-          // If still zero, try row-wise generic fees
-          if (!sum) {
-            sum = items.reduce(
-              (acc, row) => acc + parseNumber(getVal(row, ["Fees", "Transaction Fee", "Processing Fee"]) ?? 0),
-              0,
-            );
+          if (sRows.length) {
+            const feeCols = [
+              "Card Processing Fees",
+              "Payment Processing Fee",
+              "Processing Fee",
+              "Transaction Fee",
+              "Listing Fees",
+              "Order Fees",
+              "Etsy Fees",
+              "Regulatory Operating fee",
+              "Regulatory Operating Fee",
+            ];
+            let sum = 0;
+            for (const col of feeCols) sum += parseNumber(getVal(first, [col]) ?? 0);
+            if (!sum && iRows.length) {
+              sum = iRows.reduce(
+                (acc, row) => acc + parseNumber(getVal(row, ["Fees", "Transaction Fee", "Processing Fee"]) ?? 0),
+                0,
+              );
+            }
+            if (!sum) sum = parseNumber(getVal(first, ["Adjusted Fees"]) ?? 0);
+            return sum;
           }
-          // Last resort: adjusted fees
-          if (!sum) sum = parseNumber(getVal(first, ["Adjusted Fees"]) ?? 0);
-          return sum;
+          return 0;
         })();
 
-        // Quantity (sum across rows if available)
-        const quantityTotal = items.reduce((acc, row) => {
-          const qtyRaw = getVal(row, ["Quantity", "Qty"]) ?? 1;
-          const q = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
-          return acc + q;
-        }, 0) || 1;
+        const totalCogs = 0;
 
-        // Single summary line per order to ensure financials show up in the table
-        const lineItems = [
-          {
-            product_name: "Order Summary",
-            sku: null,
-            size: null,
-            quantity: quantityTotal,
-            price: revenue,
-            fees,
-            cogs: totalCogs,
-            // Do not insert profit directly; DB may compute it or we compute client-side
-          },
-        ];
-
+        // Build order record
         ordersPayload.push({
           user_id: user.id,
           order_id: orderId,
@@ -210,7 +264,64 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
           total_fees: fees,
           total_cogs: totalCogs,
         });
-        orderItemsByOrderId[orderId] = lineItems;
+
+        // Build line items
+        if (iRows.length) {
+          const lines: any[] = [];
+          for (const row of iRows) {
+            const productName =
+              getVal(row, ["Item Name", "ItemName", "Title", "Product Title", "ProductTitle"]) || "Item";
+            const sku = getVal(row, ["SKU", "Sku", "Product SKU", "ProductSKU"]) ?? null;
+
+            let size: string | null = null;
+            const sizeCol = getVal(row, ["Size"]);
+            if (sizeCol) size = String(sizeCol);
+            const variations = getVal(row, ["Variations", "Variation", "Options", "Option"]) || "";
+            if (!size && variations) {
+              const m = String(variations).match(/size\s*:\s*([^,;|]+)/i);
+              if (m) size = m[1].trim();
+            }
+
+            const qtyRaw = getVal(row, ["Quantity", "Qty"]) ?? 1;
+            const quantity = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
+
+            let price = parseNumber(getVal(row, ["Item Total", "Line Item Total", "Amount"]) ?? 0);
+            if (!price) {
+              const unit = parseNumber(getVal(row, ["Price", "Unit Price"]) ?? 0);
+              price = unit * quantity;
+            }
+
+            lines.push({
+              product_name: productName,
+              sku,
+              size: size ?? null,
+              quantity,
+              price,
+              fees: 0,
+              cogs: 0,
+            });
+          }
+          orderItemsByOrderId[orderId] = lines;
+        } else {
+          // Fallback: summary line if items are missing
+          const quantityTotal = sRows.reduce((acc, row) => {
+            const qtyRaw = getVal(row, ["Quantity", "Qty"]) ?? 1;
+            const q = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
+            return acc + q;
+          }, 0) || 1;
+
+          orderItemsByOrderId[orderId] = [
+            {
+              product_name: "Order Summary",
+              sku: null,
+              size: null,
+              quantity: quantityTotal,
+              price: revenue,
+              fees,
+              cogs: totalCogs,
+            },
+          ];
+        }
       }
 
       // Upsert orders (dedupe by user_id, order_id)
@@ -234,7 +345,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         if (delErr) throw delErr;
       }
 
-      // Insert fresh summary items for each affected order
+      // Insert fresh items for each affected order
       const itemsToInsert: any[] = [];
       for (const [orderId, lines] of Object.entries(orderItemsByOrderId)) {
         const orderPk = insertedMap.get(orderId);
@@ -249,17 +360,19 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         if (itemsErr) throw itemsErr;
       }
 
-      const totalUnique = grouped.size;
+      const totalUnique = orderIdsSet.size;
       const insertedCount = insertedMap.size;
       const dupes = totalUnique - insertedCount;
 
       toast({
-        title: `${insertedCount} new orders imported` + (dupes ? `, ${dupes} duplicates skipped` : ""),
-        description: `${totalUnique} unique orders detected in CSV.`,
+        title:
+          `${insertedCount} orders processed` + (dupes ? `, ${dupes} duplicates skipped` : ""),
+        description: `${totalUnique} unique orders detected. ${itemRows.length ? "Imported item-level details." : "Imported summary only."}`,
       });
 
       onImported?.();
-      fileRef.current.value = "";
+      if (fileRef.current) fileRef.current.value = "";
+      setFileName("");
     } catch (e: any) {
       console.error(e);
       toast({
@@ -278,17 +391,25 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         ref={fileRef}
         type="file"
         accept=".csv"
-        onChange={() => setFileName(fileRef.current?.files?.[0]?.name ?? "")}
-        aria-label="Upload orders CSV file"
+        multiple
+        onChange={() => {
+          const list = Array.from(fileRef.current?.files || []);
+          setFileName(list.length ? list.map((f) => f.name).join(", ") : "");
+        }}
+        aria-label="Upload Etsy Sold Orders and Sold Order Items CSV files"
         className="sr-only"
       />
       <Button type="button" onClick={() => fileRef.current?.click()} className="w-full sm:w-auto">
-        Upload CSV
+        Upload CSV(s)
       </Button>
       <Button onClick={handleImport} disabled={loading} variant="secondary" className="w-full sm:w-auto">
-        {loading ? "Importing..." : "Import CSV"}
+        {loading ? "Importing..." : "Import CSVs"}
       </Button>
-      {fileName && <span className="text-sm text-muted-foreground truncate" aria-live="polite">{fileName}</span>}
+      {fileName && (
+        <span className="text-sm text-muted-foreground truncate" aria-live="polite">
+          {fileName}
+        </span>
+      )}
       {!authed && (
         <a href="/auth" className="text-sm underline text-primary">Sign in</a>
       )}
