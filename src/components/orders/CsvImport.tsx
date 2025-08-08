@@ -196,7 +196,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         accept=".csv"
         onChange={() => setFileName(fileRef.current?.files?.[0]?.name ?? "")}
         aria-label="Upload orders CSV file"
-        className="hidden"
+        className="sr-only"
       />
       <Button type="button" onClick={() => fileRef.current?.click()} className="w-full sm:w-auto">
         Upload CSV
