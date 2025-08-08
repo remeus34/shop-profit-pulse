@@ -9,9 +9,17 @@ import { useNavigate } from "react-router-dom";
 // Minimal CSV import component with duplicate order detection (user_id, order_id)
 // Assumes authentication is enabled (RLS). Will toast and abort if user is not logged in.
 export default function CsvImport({ onImported }: { onImported?: () => void }) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const orderItemsRef = useRef<HTMLInputElement | null>(null);
+  const ordersRef = useRef<HTMLInputElement | null>(null);
+  const paymentsSalesRef = useRef<HTMLInputElement | null>(null);
+  const paymentsDepositsRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
-  const [fileName, setFileName] = useState("");
+  const [fileNames, setFileNames] = useState({
+    orderItems: "",
+    orders: "",
+    paymentsSales: "",
+    paymentsDeposits: "",
+  });
   const [authed, setAuthed] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -55,7 +63,11 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
 
   const handleImport = async () => {
     try {
-      const files = Array.from(fileRef.current?.files || []);
+      const files: File[] = [];
+      if (orderItemsRef.current?.files?.[0]) files.push(orderItemsRef.current.files[0]);
+      if (ordersRef.current?.files?.[0]) files.push(ordersRef.current.files[0]);
+      if (paymentsSalesRef.current?.files?.[0]) files.push(paymentsSalesRef.current.files[0]);
+      if (paymentsDepositsRef.current?.files?.[0]) files.push(paymentsDepositsRef.current.files[0]);
       if (!files.length) {
         toast({ title: "No files selected", description: "Please choose one or two Etsy CSV files to import." });
         return;
@@ -121,30 +133,45 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         return hasNet || hasFees;
       };
 
+      const isPaymentsSalesFile = (rows: any[]) => {
+        if (!rows?.length) return false;
+        const keys = Object.keys(rows[0] || {}).map((k) => normalize(k));
+        const hasOrderId = keys.includes(normalize("Order ID")) || keys.includes(normalize("Receipt ID")) || keys.includes(normalize("Order Number"));
+        const hasPaymentsHints =
+          keys.includes(normalize("Gross amount")) ||
+          keys.includes(normalize("Net amount")) ||
+          keys.includes(normalize("Fees & Taxes")) ||
+          keys.some((k) => /fee/i.test(k));
+        return hasOrderId && hasPaymentsHints;
+      };
+
       let itemRows: any[] = [];
       let summaryRows: any[] = [];
+      let paymentsSalesRows: any[] = [];
       parsedFiles.forEach((rows) => {
         if (isItemsFile(rows)) itemRows = itemRows.concat(rows);
         if (isSummaryFile(rows)) summaryRows = summaryRows.concat(rows);
+        if (isPaymentsSalesFile(rows)) paymentsSalesRows = paymentsSalesRows.concat(rows);
       });
 
-      if (!itemRows.length && !summaryRows.length) {
-        toast({ title: "No valid Etsy CSV detected", description: "Please upload Sold Orders and/or Sold Order Items CSVs." });
+      if (!itemRows.length && !summaryRows.length && !paymentsSalesRows.length) {
+        toast({ title: "No valid Etsy CSV detected", description: "Please upload at least one Etsy CSV export." });
         setLoading(false);
         return;
       }
 
       if (!itemRows.length) {
-        toast({ title: "Items CSV missing", description: "Importing summary-only rows. Item details (name/size/SKU) will be missing." });
+        toast({ title: "Order Items CSV missing", description: "Importing without item-level details may reduce accuracy." });
       }
       if (!summaryRows.length) {
-        toast({ title: "Orders summary CSV missing", description: "Totals derived from items; fees will be set to 0." });
+        toast({ title: "Orders CSV missing", description: "Totals may be derived from items or payments sales; fees may be incomplete." });
       }
 
       // Group rows by Order ID
       const orderIdsSet = new Set<string>();
       const itemsGrouped = new Map<string, any[]>();
       const summaryGrouped = new Map<string, any[]>();
+      const paymentsSalesGrouped = new Map<string, any[]>();
 
       const extractOrderId = (r: Record<string, any>) =>
         String(
@@ -163,6 +190,13 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         if (!orderId) continue;
         if (!summaryGrouped.has(orderId)) summaryGrouped.set(orderId, []);
         summaryGrouped.get(orderId)!.push(r);
+        orderIdsSet.add(orderId);
+      }
+      for (const r of paymentsSalesRows) {
+        const orderId = extractOrderId(r);
+        if (!orderId) continue;
+        if (!paymentsSalesGrouped.has(orderId)) paymentsSalesGrouped.set(orderId, []);
+        paymentsSalesGrouped.get(orderId)!.push(r);
         orderIdsSet.add(orderId);
       }
 
@@ -190,7 +224,8 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       for (const orderId of Array.from(orderIdsSet)) {
         const sRows = summaryGrouped.get(orderId) || [];
         const iRows = itemsGrouped.get(orderId) || [];
-        const first = sRows[0] || iRows[0] || {};
+        const psRows = paymentsSalesGrouped.get(orderId) || [];
+        const first = sRows[0] || iRows[0] || psRows[0] || {};
 
         // Date and store
         const dateStr =
@@ -217,13 +252,32 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
               const adjusted = getVal(first, ["Adjusted Order Net", "Adjusted Net Amount", "Adjusted Order Total"]);
               val = parseNumber(adjusted);
             }
+            if (!val && psRows.length) {
+              // Sum of Net amount from payments sales as last resort
+              val = psRows.reduce((acc, row) => acc + parseNumber(getVal(row, ["Net amount", "Net"]) ?? 0), 0);
+            }
             return val;
           }
-          return deriveRevenueFromItems(iRows);
+          const fromItems = deriveRevenueFromItems(iRows);
+          if (fromItems) return fromItems;
+          if (psRows.length) return psRows.reduce((acc, row) => acc + parseNumber(getVal(row, ["Net amount", "Net"]) ?? 0), 0);
+          return 0;
         })();
 
         // Fees
         const fees = (() => {
+          const computeFeesFromPayments = (list: any[]) => {
+            let sum = 0;
+            for (const row of list) {
+              for (const [k, v] of Object.entries(row)) {
+                const nk = String(k).toLowerCase();
+                if (nk.includes("fee")) sum += parseNumber(v as any);
+                if (nk === normalize("Regulatory Operating Fee")) sum += parseNumber(v as any);
+              }
+            }
+            return sum;
+          };
+
           if (sRows.length) {
             const feeCols = [
               "Card Processing Fees",
@@ -238,6 +292,9 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             ];
             let sum = 0;
             for (const col of feeCols) sum += parseNumber(getVal(first, [col]) ?? 0);
+            if (!sum && psRows.length) {
+              sum = computeFeesFromPayments(psRows);
+            }
             if (!sum && iRows.length) {
               sum = iRows.reduce(
                 (acc, row) => acc + parseNumber(getVal(row, ["Fees", "Transaction Fee", "Processing Fee"]) ?? 0),
@@ -247,6 +304,12 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             if (!sum) sum = parseNumber(getVal(first, ["Adjusted Fees"]) ?? 0);
             return sum;
           }
+          if (psRows.length) return computeFeesFromPayments(psRows);
+          if (iRows.length)
+            return iRows.reduce(
+              (acc, row) => acc + parseNumber(getVal(row, ["Fees", "Transaction Fee", "Processing Fee"]) ?? 0),
+              0,
+            );
           return 0;
         })();
 
@@ -365,14 +428,15 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       const dupes = totalUnique - insertedCount;
 
       toast({
-        title:
-          `${insertedCount} orders processed` + (dupes ? `, ${dupes} duplicates skipped` : ""),
-        description: `${totalUnique} unique orders detected. ${itemRows.length ? "Imported item-level details." : "Imported summary only."}`,
+        title: `${insertedCount} orders processed` + (dupes ? `, ${dupes} duplicates skipped` : ""),
+        description: `${totalUnique} unique orders detected. ${itemRows.length ? "Imported item-level details." : ""}${summaryRows.length ? "" : " (no Orders CSV)"}${paymentsSalesRows.length ? " (+ Payments Sales)" : ""}`,
       });
 
-      onImported?.();
-      if (fileRef.current) fileRef.current.value = "";
-      setFileName("");
+      if (orderItemsRef.current) orderItemsRef.current.value = "";
+      if (ordersRef.current) ordersRef.current.value = "";
+      if (paymentsSalesRef.current) paymentsSalesRef.current.value = "";
+      if (paymentsDepositsRef.current) paymentsDepositsRef.current.value = "";
+      setFileNames({ orderItems: "", orders: "", paymentsSales: "", paymentsDeposits: "" });
     } catch (e: any) {
       console.error(e);
       toast({
@@ -387,29 +451,75 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
+      {/* Hidden file inputs */}
       <Input
-        ref={fileRef}
+        ref={orderItemsRef}
         type="file"
         accept=".csv"
-        multiple
-        onChange={() => {
-          const list = Array.from(fileRef.current?.files || []);
-          setFileName(list.length ? list.map((f) => f.name).join(", ") : "");
-        }}
-        aria-label="Upload Etsy Sold Orders and Sold Order Items CSV files"
+        onChange={() =>
+          setFileNames((p) => ({ ...p, orderItems: orderItemsRef.current?.files?.[0]?.name || "" }))
+        }
+        aria-label="Upload Etsy Order Items CSV"
         className="sr-only"
       />
-      <Button type="button" onClick={() => fileRef.current?.click()} className="w-full sm:w-auto">
-        Upload CSV(s)
-      </Button>
+      <Input
+        ref={ordersRef}
+        type="file"
+        accept=".csv"
+        onChange={() => setFileNames((p) => ({ ...p, orders: ordersRef.current?.files?.[0]?.name || "" }))}
+        aria-label="Upload Etsy Orders CSV"
+        className="sr-only"
+      />
+      <Input
+        ref={paymentsSalesRef}
+        type="file"
+        accept=".csv"
+        onChange={() =>
+          setFileNames((p) => ({ ...p, paymentsSales: paymentsSalesRef.current?.files?.[0]?.name || "" }))
+        }
+        aria-label="Upload Etsy Payments Sales CSV"
+        className="sr-only"
+      />
+      <Input
+        ref={paymentsDepositsRef}
+        type="file"
+        accept=".csv"
+        onChange={() =>
+          setFileNames((p) => ({ ...p, paymentsDeposits: paymentsDepositsRef.current?.files?.[0]?.name || "" }))
+        }
+        aria-label="Upload Etsy Payments Deposits CSV"
+        className="sr-only"
+      />
+
+      {/* Visible buttons */}
+      <div className="flex flex-col sm:flex-row gap-2 w-full">
+        <Button type="button" onClick={() => orderItemsRef.current?.click()} variant="outline" className="flex-1">
+          Upload “Order Items” CSV
+        </Button>
+        <Button type="button" onClick={() => ordersRef.current?.click()} variant="outline" className="flex-1">
+          Upload “Orders” CSV
+        </Button>
+        <Button type="button" onClick={() => paymentsSalesRef.current?.click()} variant="outline" className="flex-1">
+          Upload “Etsy Payments Sales” CSV
+        </Button>
+        <Button type="button" onClick={() => paymentsDepositsRef.current?.click()} variant="outline" className="flex-1">
+          Upload “Etsy Payments Deposits” CSV
+        </Button>
+      </div>
+
       <Button onClick={handleImport} disabled={loading} variant="secondary" className="w-full sm:w-auto">
-        {loading ? "Importing..." : "Import CSVs"}
+        {loading ? "Importing..." : "Import Selected CSVs"}
       </Button>
-      {fileName && (
-        <span className="text-sm text-muted-foreground truncate" aria-live="polite">
-          {fileName}
-        </span>
-      )}
+
+      <div className="flex flex-col text-sm text-muted-foreground">
+        {fileNames.orderItems && <span aria-live="polite">Order Items: {fileNames.orderItems}</span>}
+        {fileNames.orders && <span aria-live="polite">Orders: {fileNames.orders}</span>}
+        {fileNames.paymentsSales && <span aria-live="polite">Payments Sales: {fileNames.paymentsSales}</span>}
+        {fileNames.paymentsDeposits && (
+          <span aria-live="polite">Payments Deposits: {fileNames.paymentsDeposits}</span>
+        )}
+      </div>
+
       {!authed && (
         <a href="/auth" className="text-sm underline text-primary">Sign in</a>
       )}
