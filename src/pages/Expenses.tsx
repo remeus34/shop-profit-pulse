@@ -87,7 +87,7 @@ export default function Expenses() {
   const childrenOfSelectedParent = useMemo(() => childCategories.filter(c => c.parent_id === selectedParentId), [childCategories, selectedParentId]);
 
   // Category form
-  const categoryForm = useForm<{ name: string; parent_id: string | "" }>();
+  const categoryForm = useForm<{ name: string; parent_id: string | "" }>({ defaultValues: { name: "", parent_id: "" } });
   const onAddCategory = async (values: { name: string; parent_id: string | "" }) => {
     if (!userId) return toast({ title: "Sign in required", description: "Please sign in to save categories." });
     const { error } = await supabase.from("expense_categories").insert({
@@ -357,7 +357,7 @@ export default function Expenses() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Parent (optional)</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value ?? ""}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="None (create as parent)" />
