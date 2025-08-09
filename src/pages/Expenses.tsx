@@ -255,22 +255,28 @@ export default function Expenses() {
     setProductParentId("");
     setProductChildId("");
     setVariants([{ size: "S", cost: "" }]);
-    // Refresh items list for current selection (parent or child)
-    if (selectedChildId || selectedParentId) {
-      let query = supabase
-        .from("expense_items")
-        .select("id, user_id, category_id, name")
-        .eq("user_id", userId);
-      if (selectedChildId) {
-        query = query.eq("category_id", selectedChildId);
-      } else if (selectedParentId) {
-        const childIds = categories.filter(c => c.parent_id === selectedParentId).map(c => c.id);
-        const ids = [selectedParentId, ...childIds];
-        query = query.in("category_id", ids);
-      }
-      const { data } = await query.order("name");
-      setItems(data || []);
+
+    // After save, default filters to the chosen parent/child so the new product appears
+    const nextParentId = parentId as UUID;
+    const nextChildId = (childId as UUID | null) || null;
+    setSelectedParentId(nextParentId);
+    setSelectedChildId(nextChildId);
+
+    // Refresh items list using the chosen parent/child
+    let query = supabase
+      .from("expense_items")
+      .select("id, user_id, category_id, name")
+      .eq("user_id", userId);
+    if (nextChildId) {
+      query = query.eq("category_id", nextChildId);
+    } else {
+      const childIds = categories.filter(c => c.parent_id === nextParentId).map(c => c.id);
+      const ids = [nextParentId, ...childIds];
+      query = query.in("category_id", ids);
     }
+    const { data } = await query.order("name");
+    setItems(data || []);
+
     toast({ title: "Product saved with variants" });
   };
 
