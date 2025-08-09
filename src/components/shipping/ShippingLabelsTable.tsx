@@ -18,6 +18,20 @@ export type LabelRow = {
   notes: string | null;
 };
 
+function extractEtsyOrderId(ref?: string | null, notes?: string | null): string | null {
+  const sources = [ref ?? "", notes ?? ""]; 
+  for (const s of sources) {
+    const text = String(s || "");
+    if (!text) continue;
+    // Common patterns: "Order ID: 1234567890", "Receipt ID 1234567890", or plain 9-12 digit sequence
+    const mLabeled = text.match(/(order|receipt)\s*id\s*[:#-]?\s*(\d{9,12})/i);
+    if (mLabeled?.[2]) return mLabeled[2];
+    const mDigits = text.match(/\b(\d{9,12})\b/);
+    if (mDigits?.[1]) return mDigits[1];
+  }
+  return null;
+}
+
 async function fetchLabels(filter: "all" | "unlinked" | "linked"): Promise<LabelRow[]> {
   let q = supabase.from("shipping_labels").select("id, ship_date, to_name, postal, tracking, amount, order_id, reference, notes").order("ship_date", { ascending: false }).limit(500);
   if (filter === "unlinked") q = q.is("order_id", null);
@@ -90,7 +104,7 @@ export default function ShippingLabelsTable() {
                 <TableHead>Recipient</TableHead>
                 <TableHead>ZIP</TableHead>
                 <TableHead>Tracking</TableHead>
-                <TableHead>Order ID</TableHead>
+                <TableHead>Order / Ref</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -103,16 +117,22 @@ export default function ShippingLabelsTable() {
                   <TableCell>{r.postal || "—"}</TableCell>
                   <TableCell className="truncate max-w-[160px]" title={r.tracking || undefined}>{r.tracking || "—"}</TableCell>
                   <TableCell>
-                    {r.order_id && orderNumberMap[r.order_id] ? (
-                      <Link
-                        to={`/orders?order=${encodeURIComponent(orderNumberMap[r.order_id])}`}
-                        className="text-primary underline underline-offset-2"
-                      >
-                        {orderNumberMap[r.order_id]}
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
+                    {(() => {
+                      const linked = r.order_id && orderNumberMap[r.order_id];
+                      const refId = extractEtsyOrderId(r.reference, r.notes);
+                      if (linked) {
+                        return (
+                          <Link
+                            to={`/orders?order=${encodeURIComponent(orderNumberMap[r.order_id])}`}
+                            className="text-primary underline underline-offset-2"
+                          >
+                            {orderNumberMap[r.order_id]}
+                          </Link>
+                        );
+                      }
+                      return refId ? <span title="From label reference/notes">{refId}</span> : "—";
+                    })()}
+
                   </TableCell>
                   <TableCell className="text-right">{r.amount?.toFixed(2)}</TableCell>
                   <TableCell>{r.order_id ? "Linked" : "Unlinked"}</TableCell>
