@@ -18,6 +18,24 @@ function currency(n?: number | null) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(num);
 }
 
+// Shorten long product names for display only (keeps stored values intact)
+function shortenProductName(name?: string | null, opts?: { delimiters?: string[]; maxLen?: number }) {
+  const s = (name ?? "").trim();
+  if (!s) return "";
+  const delimiters = opts?.delimiters ?? [",", " | ", " - ", "|", "-"];
+  let cutIndex = -1;
+  for (const d of delimiters) {
+    const idx = s.indexOf(d);
+    if (idx > 0) cutIndex = cutIndex === -1 ? idx : Math.min(cutIndex, idx);
+  }
+  let base = cutIndex > 0 ? s.slice(0, cutIndex).trim() : s;
+  const maxLen = opts?.maxLen ?? 50;
+  if (base.length > maxLen) {
+    return base.slice(0, maxLen - 3).trimEnd() + "...";
+  }
+  return base;
+}
+
 export default function OrdersTable({ filters, refreshToken }: { filters: OrdersFiltersState; refreshToken: number }) {
   const { data: rows, isLoading, refetch } = useQuery({
     queryKey: ["orders-table", filters, refreshToken],
@@ -180,7 +198,7 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
                     >
                       <TableCell>{g.order_id}</TableCell>
                       <TableCell>{g.order_date ? new Date(g.order_date).toLocaleDateString() : ""}</TableCell>
-                      <TableCell>{g.product_display}</TableCell>
+                      <TableCell title={g.product_display || undefined}>{shortenProductName(g.product_display)}</TableCell>
                       <TableCell></TableCell>
                       <TableCell>{g.size_display}</TableCell>
                       <TableCell>{g.quantity}</TableCell>
