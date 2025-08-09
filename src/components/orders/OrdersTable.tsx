@@ -110,7 +110,12 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
           cogs: it.cogs,
           profit: it.profit,
         });
-        if (it.size) g._sizes.add(String(it.size));
+        if (it.size) {
+          const s = String(it.size);
+          // Use base size for grouping (ignore appended color like "| Color: White")
+          const base = (s.split('|')[0] || s).replace(/,?\s*color:.*/i, '').trim();
+          g._sizes.add(base || s);
+        }
         if (it.product_name) g._products.add(String(it.product_name));
         // Prefer explicit order-level totals if available
         if (typeof it.order_total_fees === 'number') g.fees = it.order_total_fees;

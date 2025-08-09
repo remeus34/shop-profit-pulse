@@ -340,9 +340,11 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         // Build line items - only from item-level CSV; ignore summary lines for display
         if (iRows.length) {
           const dedupMap = new Map<string, any>();
+
+          // Composite key must distinguish true variants (e.g., color) but also merge repeated identical lines
           const makeKey = (li: any) => {
             const name = String(li.product_name || "").trim().toLowerCase();
-            const sizeKey = String(li.size || "").trim().toLowerCase();
+            const sizeKey = String(li.size || "").trim().toLowerCase(); // may include color suffix
             const skuKey = String(li.sku || "").trim().toLowerCase();
             return `${name}|${sizeKey}|${skuKey}`;
           };
@@ -364,14 +366,28 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             if (!productName) productName = "Unknown item";
             const sku = getVal(row, ["SKU", "Sku", "Product SKU", "ProductSKU"]) ?? null;
 
+            // Extract variant details
             let size: string | null = null;
+            let color: string | null = null;
             const sizeCol = getVal(row, ["Size"]);
-            if (sizeCol) size = String(sizeCol);
+            if (sizeCol) size = String(sizeCol).trim();
+            const colorCol = getVal(row, ["Color", "Colour"]);
+            if (colorCol) color = String(colorCol).trim();
+
             const variations = getVal(row, ["Variations", "Variation", "Options", "Option"]) || "";
             if (!size && variations) {
               const m = String(variations).match(/size\s*[:\-]\s*([^,;|]+)/i);
               if (m) size = m[1].trim();
             }
+            if (!color && variations) {
+              const m = String(variations).match(/colou?r\s*[:\-]\s*([^,;|]+)/i);
+              if (m) color = m[1].trim();
+            }
+
+            // Persist both size and color inside the single `size` field so we can render color in details
+            const sizeStored = [size || undefined, color ? `Color: ${color}` : undefined]
+              .filter(Boolean)
+              .join(" | ") || null;
 
             const qtyRaw = getVal(row, ["Quantity", "Qty"]) ?? 1;
             const quantity = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
@@ -385,7 +401,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             const candidate = {
               product_name: productName,
               sku,
-              size: size ?? null,
+              size: sizeStored,
               quantity,
               price,
               fees: 0,
@@ -394,19 +410,13 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
 
             const key = makeKey(candidate);
             if (!dedupMap.has(key)) {
-              dedupMap.set(key, candidate);
+              dedupMap.set(key, { ...candidate });
             } else {
-              // Prefer non-zero candidate over zero; otherwise keep the one with larger absolute price
+              // Merge identical variant lines within the same order: increase quantity and price
               const existing = dedupMap.get(key);
-              const existingIsZero = (!existing.price && !existing.quantity);
-              const candidateIsZero = (!candidate.price && !candidate.quantity);
-              const preferCandidate =
-                (existingIsZero && !candidateIsZero) ||
-                (Math.abs(candidate.price || 0) > Math.abs(existing.price || 0));
-
-              if (preferCandidate) {
-                dedupMap.set(key, candidate);
-              }
+              existing.quantity = (existing.quantity || 0) + (candidate.quantity || 0);
+              existing.price = (existing.price || 0) + (candidate.price || 0);
+              dedupMap.set(key, existing);
               itemDuplicateCount++;
             }
           }
