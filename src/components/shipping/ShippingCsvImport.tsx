@@ -43,7 +43,11 @@ export default function ShippingCsvImport() {
             const { data, error } = await supabase
               .from("shipping_labels")
               .upsert(
-                withId.map((d) => ({ ...d, user_id: user.id, created_by: user.id })),
+                withId.map((d) => {
+                  const sd = d.ship_date ? new Date(String(d.ship_date)) : null;
+                  const ship_date_date = sd && !isNaN(sd.getTime()) ? sd.toISOString().slice(0, 10) : null;
+                  return { ...d, ship_date_date, user_id: user.id, created_by: user.id };
+                }),
                 { onConflict: "user_id,label_id" }
               );
             if (error) throw error;
@@ -55,8 +59,12 @@ export default function ShippingCsvImport() {
             const { data, error } = await supabase
               .from("shipping_labels")
               .upsert(
-                withoutId.map((d) => ({ ...d, user_id: user.id, created_by: user.id })),
-                { onConflict: "user_id,tracking,ship_date_date,amount" }
+                withoutId.map((d) => {
+                  const sd = d.ship_date ? new Date(String(d.ship_date)) : null;
+                  const ship_date_date = sd && !isNaN(sd.getTime()) ? sd.toISOString().slice(0, 10) : null;
+                  return { ...d, ship_date_date, user_id: user.id, created_by: user.id };
+                }),
+                { onConflict: "user_id,ship_date_date,amount" }
               );
             if (error) throw error;
             const savedCount2 = Array.isArray(data as any) ? (data as any[]).length : 0;
