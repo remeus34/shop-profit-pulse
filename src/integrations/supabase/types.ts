@@ -365,6 +365,104 @@ export type Database = {
         }
         Relationships: []
       }
+      shipping_labels: {
+        Row: {
+          address1: string | null
+          amount: number
+          batch_id: string | null
+          carrier: string | null
+          city: string | null
+          country: string | null
+          created_at: string
+          created_by: string | null
+          currency: string | null
+          dimensions: string | null
+          id: string
+          label_id: string | null
+          notes: string | null
+          order_id: string | null
+          postal: string | null
+          reference: string | null
+          service: string | null
+          ship_date: string | null
+          ship_date_date: string | null
+          state: string | null
+          store_id: string | null
+          to_name: string | null
+          tracking: string | null
+          updated_at: string
+          user_id: string
+          weight: string | null
+          workspace_id: string | null
+        }
+        Insert: {
+          address1?: string | null
+          amount?: number
+          batch_id?: string | null
+          carrier?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          dimensions?: string | null
+          id?: string
+          label_id?: string | null
+          notes?: string | null
+          order_id?: string | null
+          postal?: string | null
+          reference?: string | null
+          service?: string | null
+          ship_date?: string | null
+          ship_date_date?: string | null
+          state?: string | null
+          store_id?: string | null
+          to_name?: string | null
+          tracking?: string | null
+          updated_at?: string
+          user_id: string
+          weight?: string | null
+          workspace_id?: string | null
+        }
+        Update: {
+          address1?: string | null
+          amount?: number
+          batch_id?: string | null
+          carrier?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          dimensions?: string | null
+          id?: string
+          label_id?: string | null
+          notes?: string | null
+          order_id?: string | null
+          postal?: string | null
+          reference?: string | null
+          service?: string | null
+          ship_date?: string | null
+          ship_date_date?: string | null
+          state?: string | null
+          store_id?: string | null
+          to_name?: string | null
+          tracking?: string | null
+          updated_at?: string
+          user_id?: string
+          weight?: string | null
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipping_labels_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_settings: {
         Row: {
           id: string
@@ -428,6 +526,14 @@ export type Database = {
     }
     Functions: {
       recalc_order_totals: {
+        Args: { p_order_id: string }
+        Returns: undefined
+      }
+      try_match_shipping_label: {
+        Args: { p_label: string }
+        Returns: undefined
+      }
+      update_order_shipping_from_labels: {
         Args: { p_order_id: string }
         Returns: undefined
       }

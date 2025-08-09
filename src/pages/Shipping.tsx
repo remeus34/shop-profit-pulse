@@ -1,6 +1,7 @@
 import SEO from "@/components/SEO";
 import { Card, CardContent } from "@/components/ui/card";
 import ShippingCsvImport from "@/components/shipping/ShippingCsvImport";
+import ShippingLabelsTable from "@/components/shipping/ShippingLabelsTable";
 
 export default function Shipping() {
   return (
@@ -13,6 +14,7 @@ export default function Shipping() {
           <ShippingCsvImport />
         </CardContent>
       </Card>
+      <ShippingLabelsTable />
     </div>
   );
 }

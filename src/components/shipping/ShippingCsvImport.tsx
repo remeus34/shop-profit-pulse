@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cleanPirateShipCsvRows, type CleanedShippingLabel } from "@/lib/shipping/parsePirateShipCsv";
+import { parsePirateShipDetailed } from "@/lib/shipping/parsePirateShipDetailed";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
 export default function ShippingCsvImport() {
@@ -20,15 +22,59 @@ export default function ShippingCsvImport() {
     setFileName(file.name);
 
     const lower = file.name.toLowerCase();
-    const process = (rows: Record<string, unknown>[]) => {
+    const process = async (rows: Record<string, unknown>[]) => {
       const { cleaned, ignoredCount } = cleanPirateShipCsvRows(rows);
       setCleaned(cleaned);
       setIgnored(ignoredCount);
-      setParsing(false);
-      toast({
-        title: "File parsed",
-        description: `${cleaned.length} label rows ready • ${ignoredCount} rows ignored`,
-      });
+
+      try {
+        const details = parsePirateShipDetailed(rows);
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user;
+        if (!user) {
+          toast({ title: "Not authenticated", description: "Please sign in to save labels." });
+        } else if (details.length) {
+          const withId = details.filter((d) => d.label_id && String(d.label_id).trim() !== "");
+          const withoutId = details.filter((d) => !d.label_id || String(d.label_id).trim() === "");
+
+          let saved = 0;
+
+          if (withId.length) {
+            const { data, error } = await supabase
+              .from("shipping_labels")
+              .upsert(
+                withId.map((d) => ({ ...d, user_id: user.id, created_by: user.id })),
+                { onConflict: "user_id,label_id" }
+              );
+            if (error) throw error;
+            const savedCount1 = Array.isArray(data as any) ? (data as any[]).length : 0;
+            saved += savedCount1;
+          }
+
+          if (withoutId.length) {
+            const { data, error } = await supabase
+              .from("shipping_labels")
+              .upsert(
+                withoutId.map((d) => ({ ...d, user_id: user.id, created_by: user.id })),
+                { onConflict: "user_id,tracking,ship_date_date,amount" }
+              );
+            if (error) throw error;
+            const savedCount2 = Array.isArray(data as any) ? (data as any[]).length : 0;
+            saved += savedCount2;
+          }
+
+          toast({
+            title: "Upload processed",
+            description: `${cleaned.length} label rows ready • ${ignoredCount} rows ignored • ${saved} saved (idempotent)`
+          });
+        } else {
+          toast({ title: "No label rows found", description: `${ignoredCount} rows ignored` });
+        }
+      } catch (err: any) {
+        toast({ title: "Failed to save labels", description: err.message });
+      } finally {
+        setParsing(false);
+      }
     };
 
     try {
