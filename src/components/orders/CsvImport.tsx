@@ -149,8 +149,13 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       let summaryRows: any[] = [];
       let paymentsSalesRows: any[] = [];
       parsedFiles.forEach((rows) => {
-        if (isItemsFile(rows)) itemRows = itemRows.concat(rows);
-        if (isSummaryFile(rows)) summaryRows = summaryRows.concat(rows);
+        // Classify exclusively: summary files should not be treated as item files
+        if (isSummaryFile(rows)) {
+          summaryRows = summaryRows.concat(rows);
+        } else if (isItemsFile(rows)) {
+          itemRows = itemRows.concat(rows);
+        }
+        // Payments Sales can be detected in addition to summary/items
         if (isPaymentsSalesFile(rows)) paymentsSalesRows = paymentsSalesRows.concat(rows);
       });
 
@@ -172,6 +177,10 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       const itemsGrouped = new Map<string, any[]>();
       const summaryGrouped = new Map<string, any[]>();
       const paymentsSalesGrouped = new Map<string, any[]>();
+      // Track which orders include item-level lines in this import
+      const ordersWithItems = new Set<string>();
+      // Count item-level duplicates skipped by composite key
+      let itemDuplicateCount = 0;
 
       const extractOrderId = (r: Record<string, any>) =>
         String(
@@ -328,12 +337,18 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
           total_cogs: totalCogs,
         });
 
-        // Build line items
+        // Build line items - only from item-level CSV; ignore summary lines for display
         if (iRows.length) {
-          const lines: any[] = [];
+          const dedupMap = new Map<string, any>();
+          const makeKey = (li: any) => {
+            const name = String(li.product_name || "").trim().toLowerCase();
+            const sizeKey = String(li.size || "").trim().toLowerCase();
+            const skuKey = String(li.sku || "").trim().toLowerCase();
+            return `${name}|${sizeKey}|${skuKey}`;
+          };
+
           for (const row of iRows) {
-            const rawName =
-              getVal(row, ["Item Name", "ItemName", "Title", "Product Title", "ProductTitle"]);
+            const rawName = getVal(row, ["Item Name", "ItemName", "Title", "Product Title", "ProductTitle"]);
             const normalizeName = (n: any) => String(n ?? "").trim();
             const isPlaceholderName = (n: string) => {
               const s = normalizeName(n).toLowerCase();
@@ -341,7 +356,6 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             };
             let productName = normalizeName(rawName);
             if (isPlaceholderName(productName)) {
-              // Find first meaningful item name within this order's item rows
               const fallbackName = iRows
                 .map((r) => normalizeName(getVal(r, ["Item Name", "ItemName", "Title", "Product Title", "ProductTitle"]) || ""))
                 .find((n) => !isPlaceholderName(n));
@@ -355,7 +369,6 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             if (sizeCol) size = String(sizeCol);
             const variations = getVal(row, ["Variations", "Variation", "Options", "Option"]) || "";
             if (!size && variations) {
-              // Common formats: "Size: M, Color: Black" or "size-M"
               const m = String(variations).match(/size\s*[:\-]\s*([^,;|]+)/i);
               if (m) size = m[1].trim();
             }
@@ -369,7 +382,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
               price = unit * quantity;
             }
 
-            lines.push({
+            const candidate = {
               product_name: productName,
               sku,
               size: size ?? null,
@@ -377,28 +390,29 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
               price,
               fees: 0,
               cogs: 0,
-            });
-          }
-          orderItemsByOrderId[orderId] = lines;
-        } else {
-          // Fallback: summary line if items are missing
-          const quantityTotal = sRows.reduce((acc, row) => {
-            const qtyRaw = getVal(row, ["Quantity", "Qty"]) ?? 1;
-            const q = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
-            return acc + q;
-          }, 0) || 1;
+            };
 
-          orderItemsByOrderId[orderId] = [
-            {
-              product_name: "Order Summary",
-              sku: null,
-              size: null,
-              quantity: quantityTotal,
-              price: revenue,
-              fees,
-              cogs: totalCogs,
-            },
-          ];
+            const key = makeKey(candidate);
+            if (!dedupMap.has(key)) {
+              dedupMap.set(key, candidate);
+            } else {
+              // Prefer non-zero candidate over zero; otherwise keep the one with larger absolute price
+              const existing = dedupMap.get(key);
+              const existingIsZero = (!existing.price && !existing.quantity);
+              const candidateIsZero = (!candidate.price && !candidate.quantity);
+              const preferCandidate =
+                (existingIsZero && !candidateIsZero) ||
+                (Math.abs(candidate.price || 0) > Math.abs(existing.price || 0));
+
+              if (preferCandidate) {
+                dedupMap.set(key, candidate);
+              }
+              itemDuplicateCount++;
+            }
+          }
+
+          ordersWithItems.add(orderId);
+          orderItemsByOrderId[orderId] = Array.from(dedupMap.values());
         }
       }
 
@@ -413,13 +427,15 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       const insertedMap = new Map<string, string>();
       (insertedOrders || []).forEach((o) => insertedMap.set(o.order_id, o.id));
 
-      // Replace existing items for these orders to prevent duplicates
-      const orderPks = Array.from(insertedMap.values());
-      if (orderPks.length) {
+      // Replace existing items only for orders that had item-level rows in this import
+      const orderPksWithItems = Array.from(ordersWithItems)
+        .map((oid) => insertedMap.get(oid))
+        .filter(Boolean) as string[];
+      if (orderPksWithItems.length) {
         const { error: delErr } = await supabase
           .from("order_items")
           .delete()
-          .in("order_id_fk", orderPks);
+          .in("order_id_fk", orderPksWithItems);
         if (delErr) throw delErr;
       }
 
@@ -444,7 +460,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
 
       toast({
         title: `${insertedCount} orders processed` + (dupes ? `, ${dupes} duplicates skipped` : ""),
-        description: `${totalUnique} unique orders detected. ${itemRows.length ? "Imported item-level details." : ""}${summaryRows.length ? "" : " (no Orders CSV)"}${paymentsSalesRows.length ? " (+ Payments Sales)" : ""}`,
+        description: `${totalUnique} unique orders detected. ${itemRows.length ? "Imported item-level details." : ""}${summaryRows.length ? "" : " (no Orders CSV)"}${paymentsSalesRows.length ? " (+ Payments Sales)" : ""}${itemDuplicateCount ? ` — ${itemDuplicateCount} item duplicates skipped.` : ""}`,
       });
 
       if (orderItemsRef.current) orderItemsRef.current.value = "";
