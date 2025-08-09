@@ -100,8 +100,32 @@ export function useOrdersColumns(workspaceId: string = "default") {
           .eq("workspace_id", workspaceId)
           .eq("key", SUPABASE_KEY)
           .maybeSingle();
-        if (!error && data?.value?.columns) {
-          setColumns(normalize(data.value.columns as OrdersColumnConfig[]));
+        if (!error) {
+          const raw = data?.value as unknown;
+          let serverCols: unknown = null;
+
+          if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+            const obj = raw as Record<string, unknown>;
+            const cols = (obj as any).columns;
+            if (Array.isArray(cols)) serverCols = cols;
+          } else if (typeof raw === "string") {
+            try {
+              const parsed = JSON.parse(raw);
+              if (
+                parsed &&
+                typeof parsed === "object" &&
+                Array.isArray((parsed as any).columns)
+              ) {
+                serverCols = (parsed as any).columns;
+              }
+            } catch {
+              // ignore JSON parse errors
+            }
+          }
+
+          if (serverCols && Array.isArray(serverCols)) {
+            setColumns(normalize(serverCols as OrdersColumnConfig[]));
+          }
         }
       } catch (e) {
         console.warn("Failed to load column prefs", e);
