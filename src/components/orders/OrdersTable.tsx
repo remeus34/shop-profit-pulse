@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -10,6 +10,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Settings2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import OrdersColumnsCustomizer from "./OrdersColumnsCustomizer";
+import { useOrdersColumns, OrdersColumnId } from "./useOrdersColumns";
 
 import type { OrdersFiltersState } from "./OrdersFilters";
 
@@ -165,6 +171,126 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
   });
 
   const [openRows, setOpenRows] = useState<Record<string, boolean>>({});
+  const { toast } = useToast();
+
+  const { columns, visibleColumns, toggleVisibility, reorder, resize, reset } = useOrdersColumns();
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+
+  const columnDefs = useMemo(() => ({
+    order_id: {
+      label: "Order ID",
+      render: (g: any) => g.order_id,
+      getValue: (g: any) => g.order_id as string | undefined,
+    },
+    date: {
+      label: "Date",
+      render: (g: any) => (g.order_date ? new Date(g.order_date).toLocaleDateString() : ""),
+      getValue: (g: any) => (g.order_date ? new Date(g.order_date).toLocaleDateString() : ""),
+    },
+    product_name: {
+      label: "Product Name",
+      render: (g: any) => (
+        <div className="whitespace-pre-line" title={g.product_display_full || undefined}>
+          {g.product_display_short}
+        </div>
+      ),
+      getValue: (g: any) => (g.product_display_short as string) || "",
+    },
+    sku: {
+      label: "SKU",
+      render: (_g: any) => "",
+      getValue: (_g: any) => "",
+    },
+    size: {
+      label: "Size",
+      render: (g: any) => g.size_display,
+      getValue: (g: any) => g.size_display as string | undefined,
+    },
+    quantity: {
+      label: "Qty",
+      render: (g: any) => g.quantity,
+      getValue: (g: any) => g.quantity as number | undefined,
+    },
+    price: {
+      label: "Price",
+      render: (g: any) => currency(g.price),
+      getValue: (g: any) => g.price as number | undefined,
+    },
+    discounts: {
+      label: "Discounts",
+      render: (g: any) => currency(g.discounts),
+      getValue: (g: any) => g.discounts as number | undefined,
+    },
+    fees: {
+      label: "Fees",
+      render: (g: any) => currency(g.fees),
+      getValue: (g: any) => g.fees as number | undefined,
+    },
+    cogs: {
+      label: "COGS",
+      render: (g: any) => currency(g.cogs),
+      getValue: (g: any) => g.cogs as number | undefined,
+    },
+    profit: {
+      label: "Profit",
+      render: (g: any) => currency(g.profit),
+      getValue: (g: any) => g.profit as number | undefined,
+    },
+  } as Record<OrdersColumnId, { label: string; render: (g: any) => any; getValue: (g: any) => any }>), []);
+
+  // Column resize handlers
+  const resizingRef = useRef<null | { id: OrdersColumnId; startX: number; startWidth: number }>(null);
+  const onMouseMove = (e: MouseEvent) => {
+    if (!resizingRef.current) return;
+    const { id, startX, startWidth } = resizingRef.current;
+    const delta = e.clientX - startX;
+    const newWidth = Math.max(60, startWidth + delta);
+    resize(id, newWidth);
+  };
+  const onMouseUp = () => {
+    window.removeEventListener("mousemove", onMouseMove);
+    window.removeEventListener("mouseup", onMouseUp);
+    resizingRef.current = null;
+  };
+  const handleResizeStart = (e: React.MouseEvent, id: OrdersColumnId) => {
+    const col = columns.find((c) => c.id === id);
+    const startWidth = col?.width ?? ((e.currentTarget.parentElement as HTMLElement)?.offsetWidth || 120);
+    resizingRef.current = { id, startX: e.clientX, startWidth };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
+  // Suggest hiding columns that are completely empty across visible rows (non-blocking)
+  useEffect(() => {
+    if (!rows || !rows.length) return;
+    const suggestedKey = "orders_columns_suggested_v1";
+    let suggested: Record<string, boolean> = {};
+    try { suggested = JSON.parse(localStorage.getItem(suggestedKey) || "{}"); } catch {}
+    for (const col of visibleColumns) {
+      const getter = columnDefs[col.id]?.getValue;
+      if (!getter) continue;
+      const allEmpty = rows.every((g: any) => {
+        const v = getter(g);
+        if (v === null || v === undefined) return true;
+        const s = String(v);
+        return s.trim() === "" || s === "0" && (col.id === "quantity" || col.id === "price" || col.id === "fees" || col.id === "cogs" || col.id === "profit");
+      });
+      if (allEmpty && !suggested[col.id]) {
+        toast({
+          title: `${columnDefs[col.id].label} is empty for all rows`,
+          description: "You can hide it to declutter the table.",
+          action: (
+            <ToastAction altText="Hide column" onClick={() => toggleVisibility(col.id, false)}>
+              Hide column
+            </ToastAction>
+          ),
+        });
+        suggested[col.id] = true;
+        localStorage.setItem(suggestedKey, JSON.stringify(suggested));
+        break;
+      }
+    }
+  }, [rows, visibleColumns, columnDefs, toast, toggleVisibility]);
 
   useEffect(() => {
     // just to avoid lint warnings about refetch not used
@@ -174,21 +300,28 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
   return (
     <Card>
       <CardContent className="pt-4">
+        <div className="flex justify-end mb-2">
+          <Button variant="outline" size="sm" onClick={() => setCustomizeOpen(true)}>
+            <Settings2 className="h-4 w-4 mr-2" /> Customize columns
+          </Button>
+        </div>
         <div className="overflow-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Order ID</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Product Name</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Discounts</TableHead>
-                <TableHead>Fees</TableHead>
-                <TableHead>COGS</TableHead>
-                <TableHead>Profit</TableHead>
+                {visibleColumns.map((col) => (
+                  <TableHead
+                    key={col.id}
+                    className="relative select-none"
+                    style={col.width ? { width: col.width } : undefined}
+                  >
+                    {columnDefs[col.id].label}
+                    <span
+                      className="absolute right-0 top-0 h-full w-1 cursor-col-resize"
+                      onMouseDown={(e) => handleResizeStart(e, col.id)}
+                    />
+                  </TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -204,26 +337,16 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
                       className="cursor-pointer"
                       onClick={() => setOpenRows((p) => ({ ...p, [g.order_id]: !p[g.order_id] }))}
                     >
-                      <TableCell>{g.order_id}</TableCell>
-                      <TableCell>{g.order_date ? new Date(g.order_date).toLocaleDateString() : ""}</TableCell>
-                      <TableCell>
-                        <div className="whitespace-pre-line" title={g.product_display_full || undefined}>
-                          {g.product_display_short}
-                        </div>
-                      </TableCell>
-                      <TableCell></TableCell>
-                      <TableCell>{g.size_display}</TableCell>
-                      <TableCell>{g.quantity}</TableCell>
-                      <TableCell>{currency(g.price)}</TableCell>
-                      <TableCell>{currency(g.discounts)}</TableCell>
-                      <TableCell>{currency(g.fees)}</TableCell>
-                      <TableCell>{currency(g.cogs)}</TableCell>
-                      <TableCell>{currency(g.profit)}</TableCell>
+                      {visibleColumns.map((col) => (
+                        <TableCell key={`${g.order_id}-${col.id}`} style={col.width ? { width: col.width } : undefined}>
+                          {columnDefs[col.id].render(g)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ),
                   openRows[g.order_id] ? (
                     <TableRow key={`${g.order_id}-details`}>
-                      <TableCell colSpan={11}>
+                      <TableCell colSpan={visibleColumns.length}>
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
@@ -261,6 +384,15 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
             </TableBody>
           </Table>
         </div>
+
+        <OrdersColumnsCustomizer
+          open={customizeOpen}
+          onOpenChange={setCustomizeOpen}
+          columns={columns}
+          onToggle={toggleVisibility}
+          onReorder={reorder}
+          onReset={reset}
+        />
       </CardContent>
     </Card>
   );

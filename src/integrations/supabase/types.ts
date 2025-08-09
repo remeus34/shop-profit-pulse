@@ -362,6 +362,33 @@ export type Database = {
         }
         Relationships: []
       }
+      user_settings: {
+        Row: {
+          id: string
+          key: string
+          updated_at: string
+          user_id: string
+          value: Json
+          workspace_id: string
+        }
+        Insert: {
+          id?: string
+          key: string
+          updated_at?: string
+          user_id: string
+          value: Json
+          workspace_id?: string
+        }
+        Update: {
+          id?: string
+          key?: string
+          updated_at?: string
+          user_id?: string
+          value?: Json
+          workspace_id?: string
+        }
+        Relationships: []
+      }
       vendors: {
         Row: {
           created_at: string
