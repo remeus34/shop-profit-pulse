@@ -110,7 +110,7 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
           discounts: 0,
           items: [] as any[],
           _sizes: new Set<string>(),
-          _products: new Set<string>(),
+          _product_names: [] as string[],
           _order_total_price: it.order_total_price ?? 0,
           _order_total_fees: it.order_total_fees ?? 0,
         };
@@ -134,7 +134,7 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
           const base = (s.split('|')[0] || s).replace(/,?\s*color:.*/i, '').trim();
           g._sizes.add(base || s);
         }
-        if (it.product_name) g._products.add(String(it.product_name));
+        if (it.product_name) (g._product_names as string[]).push(String(it.product_name));
         // Prefer explicit order-level totals if available
         if (typeof it.order_total_fees === 'number') g.fees = it.order_total_fees;
         if (typeof it.order_total_price === 'number') g._order_total_price = it.order_total_price;
@@ -143,10 +143,12 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
 
       const groups = Array.from(groupsMap.values()).map((g: any) => {
         const sizes = Array.from(g._sizes as Set<string>);
-        const products = Array.from(g._products as Set<string>);
         const orderTotalPrice = Number(g._order_total_price ?? 0);
         g.size_display = sizes.length === 1 ? sizes[0] : (sizes.length > 1 ? "Multiple" : "");
-        g.product_display = products.length === 1 ? products[0] : "Multiple items";
+        const productNames: string[] = (g._product_names as string[]) || [];
+        g.product_display = productNames.length
+          ? productNames.map((p: string, i: number) => `${i + 1} - ${p}`).join('\n')
+          : '';
         g.discounts = Math.max(0, g.price - (orderTotalPrice || g.price));
         g.profit = (g.price - g.discounts) - (g.fees || 0) - (g.cogs || 0);
         return g;
@@ -198,7 +200,7 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
                     >
                       <TableCell>{g.order_id}</TableCell>
                       <TableCell>{g.order_date ? new Date(g.order_date).toLocaleDateString() : ""}</TableCell>
-                      <TableCell title={g.product_display || undefined}>{shortenProductName(g.product_display)}</TableCell>
+                      <TableCell><div className="whitespace-pre-line">{g.product_display}</div></TableCell>
                       <TableCell></TableCell>
                       <TableCell>{g.size_display}</TableCell>
                       <TableCell>{g.quantity}</TableCell>
