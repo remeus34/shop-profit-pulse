@@ -384,10 +384,11 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
               if (m) color = m[1].trim();
             }
 
-            // Persist both size and color inside the single `size` field so we can render color in details
-            const sizeStored = [size || undefined, color ? `Color: ${color}` : undefined]
+            // Persist both size and color; default size to "Unknown" if missing
+            const baseSize = (size && String(size).trim()) || "Unknown";
+            const sizeStored = [baseSize, color ? `Color: ${color}` : undefined]
               .filter(Boolean)
-              .join(" | ") || null;
+              .join(" | ");
 
             const qtyRaw = getVal(row, ["Quantity", "Qty"]) ?? 1;
             const quantity = parseInt(String(qtyRaw).replace(/[^0-9-]/g, "")) || 1;
@@ -536,14 +537,15 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
               .select("id")
               .eq("user_id", userAfterInsert.id)
               .eq("item_id", itemId);
-            if (sku) query = query.eq("sku", sku); else query = query.is("sku", null as any);
-            if (size) query = query.eq("size", size); else query = query.is("size", null as any);
+            if (sku && String(sku).trim() !== "") query = query.eq("sku", String(sku).trim()); else query = query.is("sku", null as any);
+            const normalizedSize = (size && String(size).trim()) || "Unknown";
+            query = query.eq("size", normalizedSize);
             const { data: existingVar } = await query.maybeSingle();
             let variantId = existingVar?.id as string | undefined;
             if (!variantId) {
               const { data: newVar, error: insVarErr } = await supabase
                 .from("expense_variants")
-                .insert([{ user_id: userAfterInsert.id, item_id: itemId, sku, size, cost_per_unit: null }])
+                .insert([{ user_id: userAfterInsert.id, item_id: itemId, sku, size: (size && String(size).trim()) || "Unknown", cost_per_unit: null }])
                 .select("id")
                 .single();
               if (insVarErr) throw insVarErr;
@@ -558,7 +560,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
             const [pn, skuKey, sizeKey] = key.split("|");
             const productName = names.find((n) => n.toLowerCase() === pn) || null;
             const skuVal = skuKey || null;
-            const sizeVal = sizeKey || null;
+            const sizeVal = (sizeKey && sizeKey.trim()) || "Unknown";
             if (!productName) continue;
             const updater = supabase
               .from("order_items")
@@ -566,7 +568,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
               .in("order_id_fk", orderPksWithItems)
               .eq("product_name", productName);
             const finalUpdater = skuVal ? updater.eq("sku", skuVal) : updater.is("sku", null as any);
-            const { error: linkErr } = await (sizeVal ? finalUpdater.eq("size", sizeVal) : finalUpdater.is("size", null as any)).select("id");
+            const { error: linkErr } = await finalUpdater.eq("size", sizeVal).select("id");
             if (linkErr) throw linkErr;
           }
         }

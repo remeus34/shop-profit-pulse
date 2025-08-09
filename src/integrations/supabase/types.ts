@@ -180,7 +180,7 @@ export type Database = {
       expense_variants: {
         Row: {
           color: string | null
-          cost_per_unit: number
+          cost_per_unit: number | null
           created_at: string
           id: string
           item_id: string
@@ -194,7 +194,7 @@ export type Database = {
         }
         Insert: {
           color?: string | null
-          cost_per_unit: number
+          cost_per_unit?: number | null
           created_at?: string
           id?: string
           item_id: string
@@ -208,7 +208,7 @@ export type Database = {
         }
         Update: {
           color?: string | null
-          cost_per_unit?: number
+          cost_per_unit?: number | null
           created_at?: string
           id?: string
           item_id?: string
