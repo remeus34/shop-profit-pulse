@@ -146,9 +146,15 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
         const orderTotalPrice = Number(g._order_total_price ?? 0);
         g.size_display = sizes.length === 1 ? sizes[0] : (sizes.length > 1 ? "Multiple" : "");
         const productNames: string[] = (g._product_names as string[]) || [];
-        g.product_display = productNames.length
+        const fullList = productNames.length
           ? productNames.map((p: string, i: number) => `${i + 1} - ${p}`).join('\n')
           : '';
+        const shortList = productNames.length
+          ? productNames.map((p: string, i: number) => `${i + 1} - ${shortenProductName(p, { delimiters: [","], maxLen: 40 })}`).join('\n')
+          : '';
+        g.product_display_full = fullList;
+        g.product_display_short = shortList;
+        g.product_display = shortList; // backward compat for existing render logic
         g.discounts = Math.max(0, g.price - (orderTotalPrice || g.price));
         g.profit = (g.price - g.discounts) - (g.fees || 0) - (g.cogs || 0);
         return g;
@@ -200,7 +206,11 @@ export default function OrdersTable({ filters, refreshToken }: { filters: Orders
                     >
                       <TableCell>{g.order_id}</TableCell>
                       <TableCell>{g.order_date ? new Date(g.order_date).toLocaleDateString() : ""}</TableCell>
-                      <TableCell><div className="whitespace-pre-line">{g.product_display}</div></TableCell>
+                      <TableCell>
+                        <div className="whitespace-pre-line" title={g.product_display_full || undefined}>
+                          {g.product_display_short}
+                        </div>
+                      </TableCell>
                       <TableCell></TableCell>
                       <TableCell>{g.size_display}</TableCell>
                       <TableCell>{g.quantity}</TableCell>
