@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -89,19 +90,35 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         return;
       }
 
-      // Parse all CSVs
-      const parseCsv = (file: File) =>
+      // Parse files: CSV or Excel
+      const parseFile = (file: File) =>
         new Promise<any[]>((resolve, reject) => {
-          Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            worker: true,
-            complete: (res) => resolve((res.data as any[]) || []),
-            error: (err) => reject(err),
-          });
+          const lower = file.name.toLowerCase();
+          if (lower.endsWith(".csv")) {
+            Papa.parse(file, {
+              header: true,
+              skipEmptyLines: true,
+              worker: true,
+              complete: (res) => resolve(((res.data as any[]) || []).filter(Boolean)),
+              error: (err) => reject(err),
+            });
+          } else if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+            file
+              .arrayBuffer()
+              .then((buf) => {
+                const wb = XLSX.read(buf);
+                const first = wb.SheetNames[0];
+                const ws = wb.Sheets[first];
+                const json = XLSX.utils.sheet_to_json(ws, { defval: "" }) as any[];
+                resolve(json.filter(Boolean));
+              })
+              .catch(reject);
+          } else {
+            reject(new Error("Unsupported file type"));
+          }
         });
 
-      const parsedFiles = await Promise.all(files.map(parseCsv));
+      const parsedFiles = await Promise.all(files.map(parseFile));
 
       // Heuristics to detect Items vs Summary CSVs
       const isItemsFile = (rows: any[]) => {
@@ -606,7 +623,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       <Input
         ref={orderItemsRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.xlsx,.xls"
         onChange={() =>
           setFileNames((p) => ({ ...p, orderItems: orderItemsRef.current?.files?.[0]?.name || "" }))
         }
@@ -616,7 +633,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       <Input
         ref={ordersRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.xlsx,.xls"
         onChange={() => setFileNames((p) => ({ ...p, orders: ordersRef.current?.files?.[0]?.name || "" }))}
         aria-label="Upload Etsy Orders CSV"
         className="sr-only"
@@ -624,7 +641,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       <Input
         ref={paymentsSalesRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.xlsx,.xls"
         onChange={() =>
           setFileNames((p) => ({ ...p, paymentsSales: paymentsSalesRef.current?.files?.[0]?.name || "" }))
         }
@@ -634,7 +651,7 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
       <Input
         ref={paymentsDepositsRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.xlsx,.xls"
         onChange={() =>
           setFileNames((p) => ({ ...p, paymentsDeposits: paymentsDepositsRef.current?.files?.[0]?.name || "" }))
         }

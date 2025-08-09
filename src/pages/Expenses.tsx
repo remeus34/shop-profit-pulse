@@ -12,6 +12,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { Plus, Upload, Pencil, Trash2, FolderPlus, PackagePlus, Tag, Factory, Layers } from "lucide-react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
@@ -284,108 +285,129 @@ export default function Expenses() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const handleCsvImport = async () => {
     if (!userId || !csvFile) return;
-    Papa.parse(csvFile, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        const rows = results.data as any[];
-        let success = 0;
-        for (const row of rows) {
-          try {
-            const parentName = (row.parent_category || row.category || "").trim();
-            const childName = (row.child_category || row.subcategory || "").trim();
-            const productName = (row.product || row.item || "").trim();
-            const size = (row.size || "").trim();
-            const color = (row.color || "").trim();
-            const cost = Number(row.cost ?? row.cost_per_unit ?? 0);
-            const sku = (row.sku || "").trim();
-            const vendorName = (row.vendor || row.vendor_name || "").trim();
-            const tags = (row.tags || "").split(",").map((s: string) => s.trim()).filter(Boolean);
-            const notes = (row.notes || "").trim();
-            if (!productName || !size || !cost) continue;
 
-            // ensure parent
-            let parentId: UUID | null = null;
-            if (parentName) {
-              let parent = categories.find(c => !c.parent_id && c.name.toLowerCase() === parentName.toLowerCase());
-              if (!parent) {
-                const { data: pIns } = await supabase
-                  .from("expense_categories").insert({ user_id: userId, name: parentName, parent_id: null })
-                  .select("id, user_id, name, parent_id").single();
-                if (pIns) { parent = pIns as Category; setCategories(prev => [...prev, pIns as any]); }
-              }
-              parentId = parent?.id ?? null;
+    const processRows = async (rows: any[]) => {
+      const dataRows = rows || [];
+      let success = 0;
+      for (const row of dataRows) {
+        try {
+          const parentName = (row.parent_category || row.category || "").trim();
+          const childName = (row.child_category || row.subcategory || "").trim();
+          const productName = (row.product || row.item || "").trim();
+          const size = (row.size || "").trim();
+          const color = (row.color || "").trim();
+          const cost = Number(row.cost ?? row.cost_per_unit ?? 0);
+          const sku = (row.sku || "").trim();
+          const vendorName = (row.vendor || row.vendor_name || "").trim();
+          const tags = (row.tags || "").split(",").map((s: string) => s.trim()).filter(Boolean);
+          const notes = (row.notes || "").trim();
+          if (!productName || !size || !cost) continue;
+
+          // ensure parent
+          let parentId: UUID | null = null;
+          if (parentName) {
+            let parent = categories.find(c => !c.parent_id && c.name.toLowerCase() === parentName.toLowerCase());
+            if (!parent) {
+              const { data: pIns } = await supabase
+                .from("expense_categories").insert({ user_id: userId, name: parentName, parent_id: null })
+                .select("id, user_id, name, parent_id").single();
+              if (pIns) { parent = pIns as Category; setCategories(prev => [...prev, pIns as any]); }
             }
-
-            // ensure child
-            let childId: UUID | null = null;
-            if (childName) {
-              let child = categories.find(c => !!c.parent_id && c.name.toLowerCase() === childName.toLowerCase() && c.parent_id === parentId);
-              if (!child) {
-                const { data: cIns } = await supabase
-                  .from("expense_categories").insert({ user_id: userId, name: childName, parent_id: parentId })
-                  .select("id, user_id, name, parent_id").single();
-                if (cIns) { child = cIns as Category; setCategories(prev => [...prev, cIns as any]); }
-              }
-              childId = child?.id ?? null;
-            }
-            const useChildId = childId || selectedChildId;
-            const finalParentId = (parentId as UUID | null) || (useChildId ? (categories.find(c => c.id === useChildId)?.parent_id as UUID | null) : null) || (selectedParentId as UUID | null);
-            if (!useChildId && !finalParentId) continue;
-
-            // ensure item
-            let itemId: UUID | null = null;
-            const { data: iSel } = await supabase
-              .from("expense_items")
-              .select("id")
-              .eq("user_id", userId)
-              .eq("category_id", (useChildId || finalParentId) as UUID)
-              .eq("name", productName)
-              .maybeSingle();
-            if (iSel?.id) itemId = iSel.id;
-            if (!itemId) {
-              const { data: iIns } = await supabase
-                .from("expense_items").insert({ user_id: userId, category_id: (useChildId || finalParentId) as UUID, parent_category_id: finalParentId as UUID, name: productName })
-                .select("id").single();
-              itemId = iIns?.id ?? null;
-            }
-            if (!itemId) continue;
-
-            // ensure vendor
-            let vendor_id: UUID | null = null;
-            if (vendorName) {
-              const existing = vendors.find(v => v.name.toLowerCase() === vendorName.toLowerCase());
-              if (existing) vendor_id = existing.id;
-              else {
-                const { data: vIns } = await supabase
-                  .from("vendors").insert({ user_id: userId, name: vendorName })
-                  .select("id, name").single();
-                if (vIns) { vendor_id = vIns.id; setVendors(prev => [...prev, { id: vIns.id, user_id: userId as UUID, name: vIns.name } as any]); }
-              }
-            }
-
-            await supabase.from("expense_variants").insert({
-              user_id: userId,
-              item_id: itemId,
-              size,
-              color: color || null,
-              sku: sku || null,
-              cost_per_unit: cost,
-              vendor_id,
-              tags: tags.length ? tags : null,
-              notes: notes || null,
-            });
-            success++;
-          } catch (e) {
-            // continue on per-row errors
+            parentId = parent?.id ?? null;
           }
+
+          // ensure child
+          let childId: UUID | null = null;
+          if (childName) {
+            let child = categories.find(c => !!c.parent_id && c.name.toLowerCase() === childName.toLowerCase() && c.parent_id === parentId);
+            if (!child) {
+              const { data: cIns } = await supabase
+                .from("expense_categories").insert({ user_id: userId, name: childName, parent_id: parentId })
+                .select("id, user_id, name, parent_id").single();
+              if (cIns) { child = cIns as Category; setCategories(prev => [...prev, cIns as any]); }
+            }
+            childId = child?.id ?? null;
+          }
+          const useChildId = childId || selectedChildId;
+          const finalParentId = (parentId as UUID | null) || (useChildId ? (categories.find(c => c.id === useChildId)?.parent_id as UUID | null) : null) || (selectedParentId as UUID | null);
+          if (!useChildId && !finalParentId) continue;
+
+          // ensure item
+          let itemId: UUID | null = null;
+          const { data: iSel } = await supabase
+            .from("expense_items")
+            .select("id")
+            .eq("user_id", userId)
+            .eq("category_id", (useChildId || finalParentId) as UUID)
+            .eq("name", productName)
+            .maybeSingle();
+          if (iSel?.id) itemId = iSel.id;
+          if (!itemId) {
+            const { data: iIns } = await supabase
+              .from("expense_items").insert({ user_id: userId, category_id: (useChildId || finalParentId) as UUID, parent_category_id: finalParentId as UUID, name: productName })
+              .select("id").single();
+            itemId = iIns?.id ?? null;
+          }
+          if (!itemId) continue;
+
+          // ensure vendor
+          let vendor_id: UUID | null = null;
+          if (vendorName) {
+            const existing = vendors.find(v => v.name.toLowerCase() === vendorName.toLowerCase());
+            if (existing) vendor_id = existing.id;
+            else {
+              const { data: vIns } = await supabase
+                .from("vendors").insert({ user_id: userId, name: vendorName })
+                .select("id, name").single();
+              if (vIns) { vendor_id = vIns.id; setVendors(prev => [...prev, { id: vIns.id, user_id: userId as UUID, name: vIns.name } as any]); }
+            }
+          }
+
+          await supabase.from("expense_variants").insert({
+            user_id: userId,
+            item_id: itemId,
+            size,
+            color: color || null,
+            sku: sku || null,
+            cost_per_unit: cost,
+            vendor_id,
+            tags: tags.length ? tags : null,
+            notes: notes || null,
+          });
+          success++;
+        } catch (e) {
+          // continue on per-row errors
         }
-        setOpenImport(false);
-        setCsvFile(null);
-        toast({ title: `Imported ${success} rows` });
-      },
-      error: (err) => toast({ title: "CSV parse error", description: String(err) }),
-    });
+      }
+      setOpenImport(false);
+      setCsvFile(null);
+      toast({ title: `Imported ${success} rows` });
+    };
+
+    const lower = csvFile.name.toLowerCase();
+    if (lower.endsWith(".csv")) {
+      Papa.parse(csvFile, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async (results) => {
+          await processRows(results.data as any[]);
+        },
+        error: (err) => toast({ title: "CSV parse error", description: String(err) }),
+      });
+    } else if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+      try {
+        const data = await csvFile.arrayBuffer();
+        const wb = XLSX.read(data);
+        const first = wb.SheetNames[0];
+        const ws = wb.Sheets[first];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" }) as any[];
+        await processRows(rows);
+      } catch (err: any) {
+        toast({ title: "Excel parse error", description: String(err) });
+      }
+    } else {
+      toast({ title: "Unsupported file type", description: "Please upload a .csv, .xlsx, or .xls file." });
+    }
   };
 
   return (
@@ -552,7 +574,7 @@ export default function Expenses() {
                 <DialogTitle>Bulk import product costs</DialogTitle>
                 <DialogDescription>Columns: parent_category, child_category, product, size, color, cost, sku, vendor, tags, notes.</DialogDescription>
               </DialogHeader>
-              <Input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
+              <Input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
               <div className="flex gap-2">
                 <Button onClick={handleCsvImport} disabled={!csvFile}><Upload className="h-4 w-4" /> Import</Button>
                 <Button variant="outline" onClick={() => setOpenImport(false)}>Cancel</Button>
