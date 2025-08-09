@@ -464,6 +464,114 @@ export default function CsvImport({ onImported }: { onImported?: () => void }) {
         if (itemsErr) throw itemsErr;
       }
 
+      // Seed COGS: create expense_items and expense_variants, then link order_items.variant_id
+      const {
+        data: { user: userAfterInsert },
+      } = await supabase.auth.getUser();
+      if (userAfterInsert) {
+        // Build unique variant keys from inserted items
+        const uniq = new Map<string, { product_name: string; sku: string | null; size: string | null }>();
+        for (const it of itemsToInsert) {
+          const pn = String(it.product_name || "").trim();
+          const sku = (it.sku ? String(it.sku) : "").trim() || null;
+          const size = (it.size ? String(it.size) : "").trim() || null;
+          const key = `${pn.toLowerCase()}|${sku?.toLowerCase() || ""}|${size?.toLowerCase() || ""}`;
+          if (!uniq.has(key)) uniq.set(key, { product_name: pn, sku, size });
+        }
+        if (uniq.size) {
+          // Ensure an Uncategorized category exists; use it for both parent and child ids
+          let uncategorizedId: string | null = null;
+          const { data: cat, error: catErr } = await supabase
+            .from("expense_categories")
+            .select("id")
+            .eq("user_id", userAfterInsert.id)
+            .eq("name", "Uncategorized")
+            .limit(1)
+            .maybeSingle();
+          if (catErr) throw catErr;
+          if (cat?.id) {
+            uncategorizedId = cat.id;
+          } else {
+            const { data: newCat, error: insCatErr } = await supabase
+              .from("expense_categories")
+              .insert([{ name: "Uncategorized", user_id: userAfterInsert.id }])
+              .select("id")
+              .single();
+            if (insCatErr) throw insCatErr;
+            uncategorizedId = newCat.id;
+          }
+
+          // Ensure expense_items per product_name
+          const names = Array.from(new Set(Array.from(uniq.values()).map((v) => v.product_name)));
+          const { data: existingItems, error: exItemsErr } = await supabase
+            .from("expense_items")
+            .select("id,name")
+            .eq("user_id", userAfterInsert.id)
+            .in("name", names);
+          if (exItemsErr) throw exItemsErr;
+          const existingByName = new Map<string, string>((existingItems || []).map((i) => [i.name, i.id]));
+          const missingNames = names.filter((n) => !existingByName.has(n));
+          if (missingNames.length) {
+            const toInsert = missingNames.map((name) => ({
+              user_id: userAfterInsert.id,
+              name,
+              parent_category_id: uncategorizedId,
+              category_id: uncategorizedId,
+            }));
+            const { data: insertedItems, error: insItemsErr } = await supabase
+              .from("expense_items")
+              .insert(toInsert)
+              .select("id,name");
+            if (insItemsErr) throw insItemsErr;
+            (insertedItems || []).forEach((i) => existingByName.set(i.name, i.id));
+          }
+
+          // Ensure variants and link order_items
+          const variantIdsByKey = new Map<string, string>();
+          for (const { product_name, sku, size } of uniq.values()) {
+            const itemId = existingByName.get(product_name);
+            if (!itemId) continue;
+            let query = supabase
+              .from("expense_variants")
+              .select("id")
+              .eq("user_id", userAfterInsert.id)
+              .eq("item_id", itemId);
+            if (sku) query = query.eq("sku", sku); else query = query.is("sku", null as any);
+            if (size) query = query.eq("size", size); else query = query.is("size", null as any);
+            const { data: existingVar } = await query.maybeSingle();
+            let variantId = existingVar?.id as string | undefined;
+            if (!variantId) {
+              const { data: newVar, error: insVarErr } = await supabase
+                .from("expense_variants")
+                .insert([{ user_id: userAfterInsert.id, item_id: itemId, sku, size, cost_per_unit: null }])
+                .select("id")
+                .single();
+              if (insVarErr) throw insVarErr;
+              variantId = newVar.id;
+            }
+            const key = `${product_name.toLowerCase()}|${(sku || "").toLowerCase()}|${(size || "").toLowerCase()}`;
+            variantIdsByKey.set(key, variantId!);
+          }
+
+          // Link order_items to variants for the just-inserted orders
+          for (const [key, variantId] of variantIdsByKey.entries()) {
+            const [pn, skuKey, sizeKey] = key.split("|");
+            const productName = names.find((n) => n.toLowerCase() === pn) || null;
+            const skuVal = skuKey || null;
+            const sizeVal = sizeKey || null;
+            if (!productName) continue;
+            const updater = supabase
+              .from("order_items")
+              .update({ variant_id: variantId })
+              .in("order_id_fk", orderPksWithItems)
+              .eq("product_name", productName);
+            const finalUpdater = skuVal ? updater.eq("sku", skuVal) : updater.is("sku", null as any);
+            const { error: linkErr } = await (sizeVal ? finalUpdater.eq("size", sizeVal) : finalUpdater.is("size", null as any)).select("id");
+            if (linkErr) throw linkErr;
+          }
+        }
+      }
+
       const totalUnique = orderIdsSet.size;
       const insertedCount = insertedMap.size;
       const dupes = totalUnique - insertedCount;

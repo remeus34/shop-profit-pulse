@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import CsvImport from "@/components/orders/CsvImport";
 import OrdersFilters, { OrdersFiltersState } from "@/components/orders/OrdersFilters";
 import OrdersTable from "@/components/orders/OrdersTable";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -28,6 +28,25 @@ export default function Orders() {
       return Array.from(new Set(names));
     },
   });
+  useEffect(() => {
+    const channel = supabase
+      .channel("orders-cogs-updates")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "order_items" },
+        () => setRefreshToken((n) => n + 1)
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "orders" },
+        () => setRefreshToken((n) => n + 1)
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <div className="space-y-6">

@@ -252,6 +252,7 @@ export type Database = {
           sku: string | null
           updated_at: string
           user_id: string
+          variant_id: string | null
         }
         Insert: {
           cogs?: number
@@ -267,6 +268,7 @@ export type Database = {
           sku?: string | null
           updated_at?: string
           user_id: string
+          variant_id?: string | null
         }
         Update: {
           cogs?: number
@@ -282,6 +284,7 @@ export type Database = {
           sku?: string | null
           updated_at?: string
           user_id?: string
+          variant_id?: string | null
         }
         Relationships: [
           {
@@ -424,7 +427,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      recalc_order_totals: {
+        Args: { p_order_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
