@@ -45,7 +45,8 @@ export function cleanPirateShipCsvRows(rows: Record<string, unknown>[]): CsvClea
     }
 
     const date = String(row["Date"] ?? "").trim();
-    const description = String(row["Description"] ?? "").trim();
+    const rawDescription = String(row["Description"] ?? "").trim();
+    const description = rawDescription.replace(/:?\s*1\s+Label\s+Batch\s*$/i, "");
     const totalNum = parseNumber(row["Total"]);
 
     if (!date || !description || totalNum === null) {

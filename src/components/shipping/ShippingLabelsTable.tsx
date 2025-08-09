@@ -35,6 +35,7 @@ export default function ShippingLabelsTable() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [orderIdInput, setOrderIdInput] = useState("");
+  const [orderNumberMap, setOrderNumberMap] = useState<Record<string, string>>({});
 
   const load = async () => {
     setLoading(true);
@@ -53,13 +54,27 @@ export default function ShippingLabelsTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
+  useEffect(() => {
+    const ids = Array.from(new Set(rows.map(r => r.order_id).filter(Boolean))) as string[];
+    if (!ids.length) {
+      setOrderNumberMap({});
+      return;
+    }
+    supabase.from("orders").select("id, order_id").in("id", ids).then(({ data, error }) => {
+      if (!error && data) {
+        const map: Record<string, string> = {};
+        (data as any[]).forEach((o) => { if (o?.id && o?.order_id) map[o.id] = o.order_id; });
+        setOrderNumberMap(map);
+      }
+    });
+  }, [rows]);
+
   const allSelected = useMemo(() => rows.length > 0 && rows.every(r => selected[r.id]), [rows, selected]);
   const toggleAll = (checked: boolean) => {
     const next: Record<string, boolean> = {};
     if (checked) rows.forEach(r => (next[r.id] = true));
     setSelected(next);
   };
-
   const linkSelected = async () => {
     const ids = Object.keys(selected).filter(id => selected[id]);
     if (!ids.length) return toast({ title: "No labels selected" });
