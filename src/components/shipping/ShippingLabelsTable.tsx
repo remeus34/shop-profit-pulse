@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -126,6 +127,7 @@ export default function ShippingLabelsTable() {
                 <TableHead>Recipient</TableHead>
                 <TableHead>ZIP</TableHead>
                 <TableHead>Tracking</TableHead>
+                <TableHead>Order ID</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -140,6 +142,18 @@ export default function ShippingLabelsTable() {
                   <TableCell>{r.to_name || "—"}</TableCell>
                   <TableCell>{r.postal || "—"}</TableCell>
                   <TableCell className="truncate max-w-[160px]" title={r.tracking || undefined}>{r.tracking || "—"}</TableCell>
+                  <TableCell>
+                    {r.order_id && orderNumberMap[r.order_id] ? (
+                      <Link
+                        to={`/orders?order=${encodeURIComponent(orderNumberMap[r.order_id])}`}
+                        className="text-primary underline underline-offset-2"
+                      >
+                        {orderNumberMap[r.order_id]}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">{r.amount?.toFixed(2)}</TableCell>
                   <TableCell>{r.order_id ? "Linked" : "Unlinked"}</TableCell>
                 </TableRow>
